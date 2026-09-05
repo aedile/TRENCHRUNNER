@@ -75,8 +75,12 @@ static void riot_pa7_update(void)
 {
     uint8_t now = (riot_pa_in() >> 7) & 1;
     if (now != riot_pa7_last) {
-        if ((riot_pa7_pos_edge && now) || (!riot_pa7_pos_edge && !now))
+        if ((riot_pa7_pos_edge && now) || (!riot_pa7_pos_edge && !now)) {
             riot_pa7_flag = 1;
+#ifdef SW_DEBUG
+            if (snd_dbg_log_tms) printf("  SND: PA7 edge -> flag (irq_en %d) at %.3fs pc %04X\n", riot_pa7_irq_en, (double)total_cycles / 1512000.0, snd_e6809_get_pc() & 0xffff);
+#endif
+        }
         riot_pa7_last = now;
     }
 }
@@ -135,10 +139,16 @@ static void riot_write(uint16_t a, uint8_t d)
         riot_timer_irq_en = (r & 0x08) ? 1 : 0;
         riot_timer_flag = 0;
         riot_timer_expired = 0;
+#ifdef SW_DEBUG
+        if (snd_dbg_log_tms && total_cycles < 3000000) printf("  SND: RIOT timer write %02X reg %02X (prescale %u irq_en %d) at %.3fs\n", d, r, riot_prescale, riot_timer_irq_en, (double)total_cycles / 1512000.0);
+#endif
     } else {
         /* edge detect control: A0 = PA7 interrupt enable, A1 = positive edge */
         riot_pa7_irq_en = r & 0x01;
         riot_pa7_pos_edge = (r >> 1) & 0x01;
+#ifdef SW_DEBUG
+        if (snd_dbg_log_tms) printf("  SND: RIOT edge ctl reg %02X: pa7_irq_en %d pos_edge %d at %.3fs\n", r, riot_pa7_irq_en, riot_pa7_pos_edge, (double)total_cycles / 1512000.0);
+#endif
     }
 }
 
@@ -183,7 +193,12 @@ static inline __attribute__((always_inline)) unsigned char snd_read(unsigned add
 {
     uint16_t a = (uint16_t)addr;
     if (a < 0x0800) return 0xff;
-    if (a < 0x1000) { cmd_pending = 0; return cmd_val; }             /* SIN read */
+    if (a < 0x1000) {                                                /* SIN read */
+#ifdef SW_DEBUG
+        if (snd_dbg_log_tms) printf("  SND: SIN read %02X at %.3fs (pc %04X)\n", cmd_val, (double)total_cycles / 1512000.0, snd_e6809_get_pc() & 0xffff);
+#endif
+        cmd_pending = 0; return cmd_val;
+    }
     if (a < 0x1080) return riot_ram[a & 0x7f];
     if (a < 0x10a0) return riot_read(a);
     if (a < 0x2000) return 0xff;
@@ -197,7 +212,12 @@ static inline __attribute__((always_inline)) unsigned char snd_read(unsigned add
 static inline __attribute__((always_inline)) void snd_write(unsigned addr, unsigned char d)
 {
     uint16_t a = (uint16_t)addr;
-    if (a < 0x0800) { reply_val = d; reply_pending = 1; return; }    /* SOUT */
+    if (a < 0x0800) {                                                /* SOUT */
+#ifdef SW_DEBUG
+        if (snd_dbg_log_tms) printf("  SND: SOUT write %02X at %.3fs (pc %04X)\n", d, (double)total_cycles / 1512000.0, snd_e6809_get_pc() & 0xffff);
+#endif
+        reply_val = d; reply_pending = 1; return;
+    }
     if (a < 0x1000) return;
     if (a < 0x1080) { riot_ram[a & 0x7f] = d; return; }
     if (a < 0x10a0) { riot_write(a, d); return; }
@@ -290,7 +310,13 @@ uint32_t snd_run(uint32_t cycles)
     return run;
 }
 
-void snd_command_write(uint8_t d) { cmd_val = d; cmd_pending = 1; commands++; }
+void snd_command_write(uint8_t d)
+{
+#ifdef SW_DEBUG
+    if (snd_dbg_log_tms) printf("  SND: command %02X at %.3fs (pending was %d)\n", d, (double)total_cycles / 1512000.0, cmd_pending);
+#endif
+    cmd_val = d; cmd_pending = 1; commands++;
+}
 uint8_t snd_reply_read(void) { reply_pending = 0; return reply_val; }
 uint8_t snd_ready_flags(void) { return (cmd_pending ? 0x80 : 0) | (reply_pending ? 0x40 : 0); }
 

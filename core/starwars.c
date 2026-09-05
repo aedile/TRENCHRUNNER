@@ -75,7 +75,9 @@ uint32_t sw_dbg_irq_taken;          /* IRQ vector fetches */
 int sw_dbg_trace_arm;                /* set to 1 to trace the next IRQ handler */
 uint16_t sw_dbg_trace[2000]; int sw_dbg_trace_n; static int trace_active;
 uint32_t sw_dbg_pc_hist[0x10000];    /* instructions started per PC */
-uint32_t sw_dbg_avg_frames, sw_dbg_avg_mismatch;
+uint32_t sw_dbg_avg_frames, sw_dbg_avg_mismatch, sw_dbg_soundrst;
+int sw_dbg_log_flags;
+#include <stdio.h>
 uint32_t sw_dbg_w483d, sw_dbg_r483d; uint16_t sw_dbg_w483d_pc; uint8_t sw_dbg_w483d_val;
 #define DBG(x) x
 #else
@@ -240,7 +242,7 @@ static uint8_t io_read(uint16_t a)
             }
         case 0x4400:
             if (a == 0x4400) { DBG(sw_dbg_snd_reads++;) return sound_enabled ? snd_reply_read() : 0; }
-            if (a == 0x4401) { DBG(sw_dbg_snd_flag_reads++;) return 0x00; }   /* sound latches never pending (sound CPU stub) */
+            if (a == 0x4401) { DBG(sw_dbg_snd_flag_reads++;) return sound_enabled ? snd_ready_flags() : 0x00; }
             return 0xff;
         case 0x4500: case 0x4520: case 0x4540: case 0x4560:
         case 0x4580: case 0x45a0: case 0x45c0: case 0x45e0:
@@ -314,7 +316,10 @@ static void io_write(uint16_t a, uint8_t d)
         case 0x46c0:
             if (a <= 0x46c3) adc_channel = a & 3;
             break;
-        case 0x46e0: if (sound_enabled) snd_cpu_reset(); break;   /* sound CPU reset */
+        case 0x46e0:                              /* sound CPU reset */
+            DBG(sw_dbg_soundrst++; printf("  SOUNDRST at %.2fs (pc %04X, cmd pending %d)\n", (double)total_cycles / SW_CPU_CLOCK, e6809_get_pc() & 0xffff, sound_enabled ? (snd_ready_flags() >> 7) : 0);)
+            if (sound_enabled) snd_cpu_reset();
+            break;
         case 0x4700:
             if (a <= 0x4707) math_w(a & 7, d);
             break;

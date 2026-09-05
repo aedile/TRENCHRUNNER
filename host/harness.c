@@ -183,6 +183,7 @@ int main(int argc, char **argv)
     if (!nosound) sw_attach_sound(rom_sound);
     if (getenv("POKEYLOG")) snd_dbg_log_pokey = 1;
     if (getenv("TMSLOG")) snd_dbg_log_tms = 1;
+    { extern int sw_dbg_log_flags; if (getenv("FLAGLOG")) sw_dbg_log_flags = 1; }
     { extern int snd_render_mask; if (getenv("RENDERMASK")) snd_render_mask = (int)strtol(getenv("RENDERMASK"), NULL, 0); }
     FILE *wav = NULL;
     const int wav_rate = 20050;
