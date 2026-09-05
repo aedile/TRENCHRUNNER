@@ -17,6 +17,8 @@ static uint8_t irq_line;
 #define E6809_READ8(a)     cpu_read(a)
 #define E6809_WRITE8(a, d) cpu_write(a, d)
 #define E6809_IRQ_LINE     irq_line
+static inline int at_wait_loop(void);
+#define E6809_BREAK_CHECK() at_wait_loop()
 #ifdef SW_DEBUG
 static void dbg_pre_step(void);
 #define E6809_PRE_STEP()   dbg_pre_step()
@@ -396,7 +398,17 @@ static inline int in_wait_loop(unsigned pc)
 {
     return (pc >= 0x6004 && pc <= 0x6012) || (pc >= 0x6032 && pc <= 0x6035);
 }
+/* 0xCDBD-0xCDC1: TST $4320 / BMI  waits for the matrix processor (MATH_RUN clear) */
+static inline int in_math_wait_loop(unsigned pc)
+{
+    return pc >= 0xcdbd && pc <= 0xcdc1;
+}
 static uint32_t main_idle_skipped;
+static inline int at_wait_loop(void)
+{
+    unsigned pc = reg_pc & 0xffff;
+    return in_wait_loop(pc) || in_math_wait_loop(pc);
+}
 uint32_t sw_idle_skipped(void) { uint32_t v = main_idle_skipped; main_idle_skipped = 0; return v; }
 
 void sw_attach_sound(const uint8_t *rom_sound)
@@ -422,8 +434,18 @@ uint32_t sw_run(uint32_t cycles)
         if (chunk > 256) chunk = 256;
         if (chunk == 0) chunk = 1;
         unsigned c;
-        if (!irq_line && !bank_sel && in_wait_loop(e6809_get_pc() & 0xffff) && chunk > 24) {
-            c = chunk - 16;              /* leave a few cycles so the loop keeps polling normally */
+        unsigned pc = e6809_get_pc() & 0xffff;
+        uint32_t skip = 0;
+        if (!irq_line) {
+            if (!bank_sel && in_wait_loop(pc)) {
+                skip = chunk;                                   /* bounded by the next IRQ above */
+            } else if (in_math_wait_loop(pc) && math_done_at > total_cycles) {
+                uint64_t to_math = math_done_at - total_cycles;
+                skip = (to_math < chunk) ? (uint32_t)to_math : chunk;
+            }
+        }
+        if (skip > 24) {
+            c = skip - 16;               /* leave a few cycles so the loop observes the event normally */
             main_idle_skipped += c;
         } else {
             c = e6809_run(chunk);

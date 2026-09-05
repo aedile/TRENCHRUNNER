@@ -2652,6 +2652,9 @@ unsigned e6809_run (unsigned cycles)
 		E6809_PRE_STEP ();
 #endif
 		total += sstep_inl (E6809_IRQ_LINE, 0);
+#ifdef E6809_BREAK_CHECK
+		if (E6809_BREAK_CHECK ()) break;   /* e.g. the program entered a wait loop the host can skip */
+#endif
 	}
 	return total;
 }

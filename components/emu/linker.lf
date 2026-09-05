@@ -1,0 +1,7 @@
+# The main 6809 core (~25 KB) and the vector generator are the hottest code;
+# together with the rest of the emulator they overflow the 32 KB flash cache.
+[mapping:emu]
+archive: libemu.a
+entries:
+    starwars (noflash)
+    avg (noflash)

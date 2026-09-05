@@ -14,7 +14,7 @@
 extern "C" {
 #endif
 
-#define AVG_MAX_POINTS 3072
+#define AVG_MAX_POINTS 2560
 
 /* Beam coordinate space: 0..AVG_XMAX horizontally, 0..AVG_YMAX vertically (MAME visarea) */
 #define AVG_XMAX 250

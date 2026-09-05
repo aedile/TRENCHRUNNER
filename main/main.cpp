@@ -66,7 +66,7 @@ extern "C" void app_main(void)
         .prom_avg = to_ram(sw_prom_avg, sizeof(sw_prom_avg)),
     };
     sw_init(&roms);
-    sw_attach_sound(to_ram(sw_rom_sound, sizeof(sw_rom_sound)));
+    sw_attach_sound(sw_rom_sound);      /* the sound CPU is mostly idle: flash is fine for its ROM */
     sw_set_dips(0x90, 0x00);     /* 6 shields, easy, 1 bonus shield, demo sounds; free play */
     sw_set_frame_callback(on_frame, nullptr);
     sw_set_time_source([]() -> uint64_t { return (uint64_t)esp_timer_get_time(); });
