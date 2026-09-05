@@ -37,7 +37,8 @@ static uint16_t palette[256];
 static uint32_t frames_drawn, frames_dropped;
 static uint64_t busy_us;
 
-/* palette index: bits 0-2 color (R,G,B), bits 3-7 intensity (0..31) */
+/* palette index: bits 0-2 = AVG color (bit 2 red, bit 1 green, bit 0 blue, as in
+ * MAME's vector color111), bits 3-7 intensity (0..31) */
 static inline uint8_t make_idx(uint8_t color, uint8_t intensity)
 {
     unsigned bv = (unsigned)intensity * 3 / 2;    /* phosphor glow reads brighter than raw DAC level */
@@ -51,7 +52,7 @@ static void build_palette(void)
 {
     for (int i = 0; i < 256; i++) {
         unsigned v = ((i >> 3) * 255) / 31;
-        unsigned r = (i & 1) ? v : 0, g = (i & 2) ? v : 0, b = (i & 4) ? v : 0;
+        unsigned r = (i & 4) ? v : 0, g = (i & 2) ? v : 0, b = (i & 1) ? v : 0;
         uint16_t c = (uint16_t)((r & 0xF8) << 8) | (uint16_t)((g & 0xFC) << 3) | (uint16_t)(b >> 3);
         palette[i] = (uint16_t)((c >> 8) | (c << 8));
     }

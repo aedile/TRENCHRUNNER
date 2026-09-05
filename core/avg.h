@@ -22,7 +22,7 @@ extern "C" {
 
 typedef struct {
     int32_t x, y;        /* 16.16 fixed point, beam space */
-    uint8_t color;       /* 4-bit color (bit0=R, bit1=G, bit2=B as in vector color111) */
+    uint8_t color;       /* 4-bit color; bits 2,1,0 = red, green, blue (MAME vector color111) */
     uint8_t intensity;   /* 0 = move only, else brightness 0..255 */
 } avg_point_t;
 

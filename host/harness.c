@@ -110,9 +110,9 @@ static void on_frame(const avg_t *avg, void *user)
         int x = (p->x >> 16) * SCALE;
         int y = (p->y >> 16) * SCALE;
         if (have_prev && p->intensity) {
-            uint8_t r = (p->color & 1) ? p->intensity : 0;
+            uint8_t r = (p->color & 4) ? p->intensity : 0;   /* MAME color111: red is bit 2 */
             uint8_t g = (p->color & 2) ? p->intensity : 0;
-            uint8_t b = (p->color & 4) ? p->intensity : 0;
+            uint8_t b = (p->color & 1) ? p->intensity : 0;
             line(px, py, x, y, r, g, b);
             last_visible++;
         }
