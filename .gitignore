@@ -1,0 +1,18 @@
+build/
+build_docker/
+sdkconfig
+sdkconfig.old
+dependencies.lock
+managed_components/
+# ROMs are not distributable
+starwars/
+starwars.zip
+roms/
+main/roms/*.h
+host/harness
+host/harness_*
+host/out*/
+*.ppm
+*.png
+.DS_Store
+__pycache__/
