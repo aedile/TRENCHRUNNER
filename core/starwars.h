@@ -66,7 +66,8 @@ typedef struct { uint64_t avg_us, math_us, frame_cb_us; uint32_t avg_steps, math
 void sw_set_time_source(uint64_t (*now_us)(void));
 sw_stats_t *sw_stats(void);
 
-uint32_t sw_idle_skipped(void);       /* main CPU cycles skipped in wait loops since last call */
+uint32_t sw_idle_skipped(void);
+uint32_t sw_soundrst_count(void);     /* SOUNDRST writes by the main CPU (1 at boot is normal) */       /* main CPU cycles skipped in wait loops since last call */
 
 /* Diagnostics */
 uint64_t sw_total_cycles(void);

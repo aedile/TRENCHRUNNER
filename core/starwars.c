@@ -67,6 +67,8 @@ static uint64_t avg_done_at;       /* CPU cycle when VG_HALT becomes visible */
 static uint64_t math_done_at;      /* CPU cycle when MATH_RUN clears */
 static uint32_t prng_state = 1;
 static int sound_enabled;
+static uint32_t soundrst_count;
+uint32_t sw_soundrst_count(void) { return soundrst_count; }
 static avg_t avg;
 #ifdef SW_DEBUG
 uint32_t sw_dbg_in0_reads, sw_dbg_in1_reads, sw_dbg_snd_writes, sw_dbg_snd_flag_reads, sw_dbg_snd_reads, sw_dbg_math_runs, sw_dbg_div_ops, sw_dbg_adc_reads;
@@ -317,8 +319,9 @@ static void io_write(uint16_t a, uint8_t d)
             if (a <= 0x46c3) adc_channel = a & 3;
             break;
         case 0x46e0:                              /* sound CPU reset */
-            DBG(sw_dbg_soundrst++; printf("  SOUNDRST at %.2fs (pc %04X, cmd pending %d)\n", (double)total_cycles / SW_CPU_CLOCK, e6809_get_pc() & 0xffff, sound_enabled ? (snd_ready_flags() >> 7) : 0);)
+            DBG(sw_dbg_soundrst++; printf("  SOUNDRST at %.2fs (main pc %04X, flags %02X, sound pc %04X)\n", (double)total_cycles / SW_CPU_CLOCK, e6809_get_pc() & 0xffff, sound_enabled ? snd_ready_flags() : 0, sound_enabled ? snd_pc() : 0); if (sound_enabled) snd_dbg_dump();)
             if (sound_enabled) snd_cpu_reset();
+            soundrst_count++;
             break;
         case 0x4700:
             if (a <= 0x4707) math_w(a & 7, d);

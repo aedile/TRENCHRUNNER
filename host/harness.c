@@ -223,14 +223,14 @@ int main(int argc, char **argv)
             }
         }
         sw_run(slice);
-        if (wav) {
+        if (!nosound) {
+            /* always run the audio path: the speech chip only advances while rendering */
             audio_acc += (double)slice * wav_rate / SW_CPU_CLOCK;
             int n = (int)audio_acc;
             audio_acc -= n;
             if (n > 4096) n = 4096;
             snd_render(abuf, n, wav_rate);
-            fwrite(abuf, sizeof(int16_t), n, wav);
-            wav_samples += n;
+            if (wav) { fwrite(abuf, sizeof(int16_t), n, wav); wav_samples += n; }
         }
         if (now_s - last_report >= 1.0) {
             if (!nosound) {

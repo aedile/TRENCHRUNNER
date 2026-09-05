@@ -90,9 +90,20 @@ static uint8_t riot_read(uint16_t a)
     uint8_t r = a & 0x1f;
     if (!(r & 0x04)) {
         switch (r & 3) {
-            case 0: return (riot_pa_in() & ~riot_ddra) | (riot_pa_out & riot_ddra);
+            case 0: {
+#ifdef SW_DEBUG
+                if (snd_dbg_log_tms) printf("  RIOT PA read %.3fs: in %02X ddra %02X pc %04X\n", (double)total_cycles / 1512000.0, riot_pa_in(), riot_ddra, snd_e6809_get_pc() & 0xffff);
+#endif
+                return (riot_pa_in() & ~riot_ddra) | (riot_pa_out & riot_ddra);
+            }
             case 1: return riot_ddra;
-            case 2: return (tms5220_status(&tms) & ~riot_ddrb) | (riot_pb_out & riot_ddrb);
+            case 2: {
+                uint8_t st = tms5220_status(&tms);
+#ifdef SW_DEBUG
+                if (snd_dbg_log_tms) printf("  TMS PB read %.3fs: /RS %d status %02X (talkd %d spen %d talk %d fifo %d ddis %d) pc %04X\n", (double)total_cycles / 1512000.0, (riot_pa_out >> 1) & 1, st, tms.TALKD, tms.SPEN, tms.TALK, tms.fifo_count, tms.DDIS, snd_e6809_get_pc() & 0xffff);
+#endif
+                return (st & ~riot_ddrb) | (riot_pb_out & riot_ddrb);
+            }
             case 3: return riot_ddrb;
         }
     }
@@ -117,7 +128,7 @@ static void riot_write(uint16_t a, uint8_t d)
                 uint8_t old = riot_pa_out;
                 riot_pa_out = d;
 #ifdef SW_DEBUG
-                if (snd_dbg_log_tms && ((old ^ d) & 0x03)) printf("  TMS ctl: /WS %d /RS %d data %02X (DDIS %d fifo %d)\n", d & 1, (d >> 1) & 1, riot_pb_out, tms.DDIS, tms.fifo_count);
+                if (snd_dbg_log_tms && ((old ^ d) & 0x03) && !(d & 1) == 1) printf("  TMS ctl %.2fs: /WS %d /RS %d data %02X (DDIS %d fifo %d talk %d status %02X)\n", (double)total_cycles / 1512000.0, d & 1, (d >> 1) & 1, riot_pb_out, tms.DDIS, tms.fifo_count, tms.TALKD, tms5220_status(&tms));
 #endif
                 /* TMS5220 control lines are outputs on PA0 (/WS) and PA1 (/RS) */
                 if ((old ^ d) & 0x01) tms5220_wsq(&tms, d & 0x01);

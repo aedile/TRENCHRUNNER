@@ -107,7 +107,7 @@ extern "C" void app_main(void)
         if (now - last_report >= 5000000) {
             sw_stats_t *st = sw_stats();
             uint32_t drawn = render_frames_drawn(), dropped = render_frames_dropped();
-            ESP_LOGI(TAG, "5s: emulated %lu, drawn %lu, dropped %lu, skipped %lu; ms/s: emu-total %llu (6809 %llu, avg %llu, math %llu, submit %llu) render %llu audio %llu; idle-skip main %lu%% snd %lu%%; heap %lu; pc %04X",
+            ESP_LOGI(TAG, "5s: emulated %lu, drawn %lu, dropped %lu, skipped %lu; ms/s: emu-total %llu (6809 %llu, avg %llu, math %llu, submit %llu) render %llu audio %llu; idle-skip main %lu%% snd %lu%%; sndrst %lu; heap %lu; pc %04X",
                      (unsigned long)frames_emulated, (unsigned long)drawn, (unsigned long)dropped, (unsigned long)frames_skipped,
                      (unsigned long long)(t_emu / 5000),
                      (unsigned long long)((t_emu - st->avg_us - st->math_us - st->frame_cb_us) / 5000),
@@ -116,6 +116,7 @@ extern "C" void app_main(void)
                      (unsigned long long)(render_busy_us() / 5000), (unsigned long long)(t_audio / 5000),
                      (unsigned long)(sw_idle_skipped() / (5 * SW_CPU_CLOCK / 100)),
                      (unsigned long)(snd_idle_skipped() / (5 * SW_CPU_CLOCK / 100)),
+                     (unsigned long)sw_soundrst_count(),
                      (unsigned long)esp_get_free_heap_size(), sw_pc());
             memset(st, 0, sizeof(*st));
             frames_emulated = 0; frames_skipped = 0;

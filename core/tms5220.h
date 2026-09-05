@@ -34,7 +34,11 @@ typedef struct {
     int excitation;
     int32_t u[11], x[10];
     int16_t last_sample;
-    /* resampling to the mixer rate */
+    /* synthesis runs in emulated time (one sample per 180 CPU cycles) into a
+     * ring buffer; render drains it at the mixer rate */
+    uint32_t cycle_acc;
+    int16_t ring[2048];
+    unsigned ring_w, ring_r;
     uint32_t resample_acc;
     int16_t prev_out;
     /* diagnostics */
@@ -48,7 +52,7 @@ void tms5220_rsq(tms5220_t *t, int level);         /* /RS: read strobe */
 void tms5220_data_write(tms5220_t *t, uint8_t d);  /* value on the data bus */
 uint8_t tms5220_status(tms5220_t *t);
 int tms5220_readyq(const tms5220_t *t);            /* /READY level: 0 = ready */
-void tms5220_tick(tms5220_t *t, unsigned cpu_cycles);   /* no-op: synthesis runs in render */
+void tms5220_tick(tms5220_t *t, unsigned cpu_cycles);   /* advances synthesis by CPU time */
 void tms5220_render(tms5220_t *t, int16_t *buf, int samples, int sample_rate);  /* mixes into buf */
 
 #ifdef __cplusplus

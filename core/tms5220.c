@@ -142,7 +142,6 @@ int tms5220_readyq(const tms5220_t *t)
     return (t->fifo_count >= TMS_FIFO_SIZE && t->DDIS) ? 1 : 0;
 }
 
-void tms5220_tick(tms5220_t *t, unsigned cpu_cycles) { (void)t; (void)cpu_cycles; }
 
 /* ---- synthesis ---- */
 static void parse_frame(tms5220_t *t)
@@ -299,19 +298,44 @@ static int16_t synth_sample(tms5220_t *t)
     return out;
 }
 
+#define RING_SIZE 2048
+#define CYCLES_PER_SAMPLE 180      /* 1.512 MHz CPU clock / 8.4 kHz sample rate */
+
+/* Synthesis keeps pace with the emulated CPUs, so the FIFO drains and the
+ * status/ready lines change on the same schedule as the real chip regardless
+ * of how often the host renders audio. */
+void tms5220_tick(tms5220_t *t, unsigned cpu_cycles)
+{
+    t->cycle_acc += cpu_cycles;
+    while (t->cycle_acc >= CYCLES_PER_SAMPLE) {
+        t->cycle_acc -= CYCLES_PER_SAMPLE;
+        int16_t v = synth_sample(t);
+        if (!t->TALKD && v == 0 && t->ring_r == t->ring_w) continue;   /* idle: keep the ring empty */
+        unsigned next = (t->ring_w + 1) & (RING_SIZE - 1);
+        if (next == t->ring_r) t->ring_r = (t->ring_r + 1) & (RING_SIZE - 1);   /* overrun: drop oldest */
+        t->ring[t->ring_w] = v;
+        t->ring_w = next;
+    }
+}
+
 void tms5220_render(tms5220_t *t, int16_t *buf, int samples, int sample_rate)
 {
-    /* the chip runs at 8.4 kHz; upsample with linear interpolation into the mixer rate */
+    /* drain the 8.4 kHz ring with linear interpolation into the mixer rate */
     uint32_t step = (uint32_t)(((uint64_t)TMS_SAMPLE_RATE << 16) / (uint32_t)sample_rate);
-    if (!t->TALKD && !t->SPEN && !t->TALK && t->prev_out == 0 && t->last_sample == 0) {
-        return;                                     /* idle: nothing to add */
+    if (t->ring_r == t->ring_w && t->prev_out == 0 && t->last_sample == 0) {
+        return;                                     /* nothing queued and already silent */
     }
     for (int i = 0; i < samples; i++) {
         t->resample_acc += step;
         while (t->resample_acc >= 0x10000) {
             t->resample_acc -= 0x10000;
             t->prev_out = t->last_sample;
-            t->last_sample = synth_sample(t);
+            if (t->ring_r != t->ring_w) {
+                t->last_sample = t->ring[t->ring_r];
+                t->ring_r = (t->ring_r + 1) & (RING_SIZE - 1);
+            } else {
+                t->last_sample = 0;                 /* underrun: the synth hasn't produced this yet */
+            }
         }
         int32_t frac = t->resample_acc;              /* 0..65535 */
         int32_t v = t->prev_out + (((int32_t)t->last_sample - t->prev_out) * frac >> 16);
