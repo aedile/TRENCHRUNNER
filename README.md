@@ -4,7 +4,7 @@ Atari's 1983 *Star Wars* arcade game, running on a Fiesta medal.
 
 This is an emulator of the original arcade board, not a remake. It runs the
 original ROM code on a Waveshare ESP32-C6-LCD-1.69 module, the same $20 board
-that powers [PELLETINO](https://github.com/jesse-r-castro/PELLETINO), the
+that powers [PELLETINO](https://github.com/aedile/PELLETINO), the
 Pac-Man Fiesta medal. If you're not from San Antonio: Fiesta medals are the
 pins people collect and trade every April, and one-upping each other's medals
 is half the point. You hold it sideways like a flight yoke, tilt to fly, and

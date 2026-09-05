@@ -61,5 +61,5 @@ from free-running counters, follows the design Ron Fries described for his
 ## Hardware drivers
 
 The ST7789 display, QMI8658 IMU and ES8311 codec drivers under `components/`
-come from PELLETINO, https://github.com/jesse-r-castro/PELLETINO, by the same
+come from PELLETINO, https://github.com/aedile/PELLETINO, by the same
 author, and are covered by this project's 0BSD license.
