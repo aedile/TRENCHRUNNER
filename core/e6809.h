@@ -1,3 +1,9 @@
+/*
+ * e6809.h - MC6809 CPU emulator interface, from vecx (https://github.com/jhawthorn/vecx).
+ * Copyright (C) Valavan Manohararajah and the vecx contributors. GPL-3.0; see
+ * LICENSES/GPL-3.0.txt. Modified for TRENCHRUNNER on 4 September 2026 to add
+ * e6809_get_pc() and e6809_run().
+ */
 #ifndef __E6809_H
 #define __E6809_H
 

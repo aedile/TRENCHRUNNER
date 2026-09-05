@@ -1,7 +1,25 @@
 /*
- * e6809.c - MC6809 CPU emulator from vecx (https://github.com/jhawthorn/vecx),
- * copyright Valavan Manohararajah and vecx contributors, GPL-3.0.
- * See THIRD_PARTY_NOTICES.md for the modifications made in TRENCHRUNNER.
+ * e6809.c - MC6809 CPU emulator
+ *
+ * Copyright (C) Valavan Manohararajah and the vecx contributors.
+ * This file is part of vecx, https://github.com/jhawthorn/vecx, and is free
+ * software: you can redistribute it and/or modify it under the terms of the
+ * GNU General Public License as published by the Free Software Foundation,
+ * version 3. It is distributed WITHOUT ANY WARRANTY; without even the implied
+ * warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+ * LICENSES/GPL-3.0.txt in this repository for the full license text.
+ *
+ * MODIFIED for TRENCHRUNNER by Jesse Castro, 4 September 2026:
+ *   - the bus accessors (E6809_READ8/E6809_WRITE8) and the IRQ line
+ *     (E6809_IRQ_LINE) can be supplied as macros by the including file so
+ *     they inline into the core;
+ *   - added e6809_run(): executes a budget of cycles in one call, with an
+ *     optional per-instruction E6809_PRE_STEP hook and E6809_BREAK_CHECK
+ *     early exit;
+ *   - added e6809_get_pc();
+ *   - the einline helpers are declared static inline always_inline and the
+ *     ea_indexed local 'ea' is initialized.
+ * The original file is unchanged otherwise.
  */
 #include <stdio.h>
 #include "e6809.h"
