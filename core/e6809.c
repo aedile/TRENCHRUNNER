@@ -1,3 +1,8 @@
+/*
+ * e6809.c - MC6809 CPU emulator from vecx (https://github.com/jhawthorn/vecx),
+ * copyright Valavan Manohararajah and vecx contributors, GPL-3.0.
+ * See THIRD_PARTY_NOTICES.md for the modifications made in TRENCHRUNNER.
+ */
 #include <stdio.h>
 #include "e6809.h"
 

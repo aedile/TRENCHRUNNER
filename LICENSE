@@ -1,0 +1,40 @@
+TRENCHRUNNER is released under the Zero-Clause BSD license (0BSD), the most
+permissive license the Open Source Initiative approves: no attribution, no
+notice preservation, no conditions at all.
+
+That covers the code written for this project: everything under main/, host/,
+tools/, components/audio_hal, components/display, components/imu, and the
+files core/starwars.c, core/starwars.h, core/sound.c, core/sound.h,
+core/pokey.c, core/pokey.h, core/tms5220.c, core/tms5220.h, core/avg.c,
+core/avg.h.
+
+Two things carry their own licenses, listed in THIRD_PARTY_NOTICES.md:
+
+  * core/e6809.c and core/e6809.h are the 6809 CPU core from vecx, which is
+    GPL-3.0. Because a build of this project links that core in, the combined
+    firmware and host harness must be distributed under the terms of the
+    GPL-3.0 as well. Replace that one file with a permissively licensed core
+    and the whole project is 0BSD.
+  * Several files are ports of MAME source code, which is BSD-3-Clause and
+    requires the copyright notice to be kept.
+
+The Star Wars ROM images are not part of this project and are not licensed
+by it. They remain the property of their copyright holders.
+
+----------------------------------------------------------------------------
+
+Zero-Clause BSD
+===============
+
+Copyright (C) 2026 Jesse Castro
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
+AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
+OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS SOFTWARE.
