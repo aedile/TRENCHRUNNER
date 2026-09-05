@@ -344,4 +344,7 @@ uint32_t snd_irq_count(void) { return irq_count; }
 uint32_t snd_pokey_writes(void) { return pokey_writes; }
 uint32_t snd_commands(void) { return commands; }
 uint64_t snd_total_cycles(void) { return total_cycles; }
+uint32_t snd_speech_underruns(void) { return tms.underruns; }
+void snd_speech_debug(uint32_t *written, uint32_t *rd, uint32_t *calls, uint32_t *rate, uint32_t *talkd)
+{ *written = tms.dbg_written; *rd = tms.dbg_read; *calls = tms.dbg_render_calls; *rate = tms.dbg_rate; *talkd = tms.TALKD; }
 uint32_t snd_idle_skipped(void) { uint32_t v = idle_skipped; idle_skipped = 0; return v; }

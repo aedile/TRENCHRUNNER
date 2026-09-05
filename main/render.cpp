@@ -3,6 +3,7 @@
  * from a dedicated task.
  */
 #include "render.h"
+#include "marquee.h"
 #include "display.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -21,9 +22,17 @@ static const char *TAG = "RENDER";
 #define ROWS_PER_CHUNK 14      /* 240*14*2 = 6720 bytes per DMA chunk */
 #define NUM_LISTS 2
 
-/* Orientation: beam X (0..AVG_XMAX) -> panel rows, beam Y (0..AVG_YMAX) -> panel columns. */
+/* Orientation.
+ * The beam coordinate box is 250 x 280, but the cabinet showed it on a 4:3 landscape monitor
+ * (MAME does the same), so the picture is 4:3 regardless of the box.
+ * PORTRAIT (medal upright): letterboxed 4:3 picture, 240 x 180, with 50-row bars top and bottom.
+ * LANDSCAPE (medal sideways): beam X -> panel rows, beam Y -> panel columns (the original layout). */
+#define ORIENTATION_PORTRAIT 1
 #define FLIP_BEAM_X 0
 #define FLIP_BEAM_Y 1
+#define PORTRAIT_PIC_W FB_W
+#define PORTRAIT_PIC_H (FB_W * 3 / 4)
+#define PORTRAIT_TOP_BAR ((FB_H - PORTRAIT_PIC_H) / 2)
 
 /* compact vector point: panel coordinates + 8-bit palette index (0 = move only) */
 typedef struct { int16_t x, y; uint8_t idx; uint8_t pad; } vpoint_t;
@@ -66,6 +75,17 @@ static inline void beam_to_panel(int32_t bx, int32_t by, int *px, int *py)
     if (gx > AVG_XMAX) gx = AVG_XMAX;
     if (gy < 0) gy = 0;
     if (gy > AVG_YMAX) gy = AVG_YMAX;
+#if ORIENTATION_PORTRAIT
+    int col = gx * (PORTRAIT_PIC_W - 1) / AVG_XMAX;
+    int row = PORTRAIT_TOP_BAR + gy * (PORTRAIT_PIC_H - 1) / AVG_YMAX;
+#if FLIP_BEAM_X
+    col = FB_W - 1 - col;
+#endif
+#if FLIP_BEAM_Y
+    (void)0;   /* beam Y already runs top to bottom, like the host harness image */
+#endif
+    *px = col; *py = row;
+#else
     int row = gx * (FB_H - 1) / AVG_XMAX;
     int col = gy * (FB_W - 1) / AVG_YMAX;
 #if FLIP_BEAM_X
@@ -75,6 +95,7 @@ static inline void beam_to_panel(int32_t bx, int32_t by, int *px, int *py)
     col = FB_W - 1 - col;
 #endif
     *px = col; *py = row;
+#endif
 }
 
 /* endpoints are always inside the frame buffer, so no per-pixel bounds checks */
@@ -103,6 +124,9 @@ static void rasterize(const vlist_t *l)
         if (i > 0 && p->idx) line(px, py, p->x, p->y, p->idx);
         px = p->x; py = p->y;
     }
+#if ORIENTATION_PORTRAIT
+    marquee_draw(fb, FB_W, FB_H, PORTRAIT_TOP_BAR, PORTRAIT_TOP_BAR + PORTRAIT_PIC_H);
+#endif
 }
 
 static void present(void)

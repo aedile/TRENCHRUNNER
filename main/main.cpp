@@ -12,6 +12,7 @@
 #include "starwars.h"
 #include "starwars_roms.h"
 #include "render.h"
+#include "marquee.h"
 #include "input.h"
 #include "audio_hal.h"
 #include "sound.h"
@@ -47,6 +48,14 @@ extern "C" void app_main(void)
     display_init();
     display_set_backlight(DISPLAY_BRIGHTNESS_ACTIVE);
     render_init();
+    /* Marquee text in the black bars above and below the picture (portrait layout only).
+     * Off by default. marquee_set(bar, text, color, star_color, scale, scroll px/s): asterisks
+     * are drawn in star_color (MARQUEE_NONE = same as the text); scroll 0 = static, centred.
+     * Colors: MARQUEE_RED/GREEN/BLUE/CYAN/MAGENTA/YELLOW/WHITE; scale 2 = 20-pixel letters. */
+#ifdef MARQUEE_DEMO
+    marquee_set(MARQUEE_TOP, "FIESTA 2027 * VIVA FIESTA * SAN ANTONIO *", MARQUEE_RED, MARQUEE_GREEN, 2, 40);
+    marquee_set(MARQUEE_BOTTOM, "MAY THE FORCE BE WITH YOU * RED FIVE STANDING BY *", MARQUEE_BLUE, MARQUEE_GREEN, 2, 30);
+#endif
     input_init();
     audio_init();
 
@@ -107,7 +116,8 @@ extern "C" void app_main(void)
         if (now - last_report >= 5000000) {
             sw_stats_t *st = sw_stats();
             uint32_t drawn = render_frames_drawn(), dropped = render_frames_dropped();
-            ESP_LOGI(TAG, "5s: emulated %lu, drawn %lu, dropped %lu, skipped %lu; ms/s: emu-total %llu (6809 %llu, avg %llu, math %llu, submit %llu) render %llu audio %llu; idle-skip main %lu%% snd %lu%%; sndrst %lu; heap %lu; pc %04X",
+            ESP_LOGI(TAG, "%llums: emulated %lu, drawn %lu, dropped %lu, skipped %lu; ms/s: emu-total %llu (6809 %llu, avg %llu, math %llu, submit %llu) render %llu audio %llu; idle-skip main %lu%% snd %lu%%; sndrst %lu; underruns %lu speech-gaps %lu; heap %lu; pc %04X",
+                     (unsigned long long)((now - last_report) / 1000),
                      (unsigned long)frames_emulated, (unsigned long)drawn, (unsigned long)dropped, (unsigned long)frames_skipped,
                      (unsigned long long)(t_emu / 5000),
                      (unsigned long long)((t_emu - st->avg_us - st->math_us - st->frame_cb_us) / 5000),
@@ -116,7 +126,7 @@ extern "C" void app_main(void)
                      (unsigned long long)(render_busy_us() / 5000), (unsigned long long)(t_audio / 5000),
                      (unsigned long)(sw_idle_skipped() / (5 * SW_CPU_CLOCK / 100)),
                      (unsigned long)(snd_idle_skipped() / (5 * SW_CPU_CLOCK / 100)),
-                     (unsigned long)sw_soundrst_count(),
+                     (unsigned long)sw_soundrst_count(), (unsigned long)audio_get_underrun_count(), (unsigned long)snd_speech_underruns(),
                      (unsigned long)esp_get_free_heap_size(), sw_pc());
             memset(st, 0, sizeof(*st));
             frames_emulated = 0; frames_skipped = 0;

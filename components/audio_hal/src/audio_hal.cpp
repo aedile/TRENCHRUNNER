@@ -23,6 +23,7 @@ static int16_t sample_buffer[AUDIO_MAX_SAMPLES];
 static volatile uint32_t audio_bytes_sent = 0;     // advanced from the I2S ISR
 static uint32_t audio_bytes_written = 0;
 static volatile uint32_t audio_underruns = 0;
+static uint32_t audio_dbg_requested = 0;
 // Keep about 3 frames of audio queued ahead of the DAC (latency vs. jitter margin)
 static constexpr uint32_t AUDIO_TARGET_BYTES = (AUDIO_SAMPLE_RATE * 3 / 60) * sizeof(int16_t);
 
@@ -194,15 +195,24 @@ void audio_init(void)
     ESP_LOGI(TAG, "Audio subsystem initialized");
 }
 
-static void audio_transmit(uint32_t samples)
-{
-    if (!i2s_tx_handle || samples == 0) return;
+// Samples rendered but not yet accepted by the driver (its queue was full). They are
+// written before anything new is rendered, so the mixer never runs ahead of the DAC:
+// every sample rendered is eventually played, in order.
+static uint32_t pending_off = 0, pending_len = 0;   // in samples, within sample_buffer
 
-    size_t bytes_written = 0;
-    // Never block the frame loop: we only ever top the queue up to
-    // AUDIO_TARGET_BYTES, which is well below the DMA capacity.
-    i2s_channel_write(i2s_tx_handle, sample_buffer, samples * sizeof(int16_t), &bytes_written, 0);
-    audio_bytes_written += bytes_written;
+static bool audio_flush_pending(void)
+{
+    if (!i2s_tx_handle) { pending_len = 0; return true; }
+    while (pending_len) {
+        size_t bytes_written = 0;
+        i2s_channel_write(i2s_tx_handle, sample_buffer + pending_off, pending_len * sizeof(int16_t), &bytes_written, 0);
+        audio_bytes_written += bytes_written;
+        uint32_t n = bytes_written / sizeof(int16_t);
+        pending_off += n;
+        pending_len -= n;
+        if (n == 0) return false;                    // driver queue full: try again next time
+    }
+    return true;
 }
 
 void audio_update(void)
@@ -211,6 +221,7 @@ void audio_update(void)
     if (!codec_powered || audio_muted) {
         return;
     }
+    if (!audio_flush_pending()) return;
 
     // Top the DMA queue up to the target depth. Because we generate exactly what
     // the DAC has consumed, production is locked to the I2S clock: no drift, no
@@ -229,9 +240,15 @@ void audio_update(void)
     if (samples == 0) return;
 
     snd_render(sample_buffer, (int)samples, AUDIO_SAMPLE_RATE);
-    audio_transmit(samples);
+    audio_dbg_requested += samples * sizeof(int16_t);
+    pending_off = 0; pending_len = samples;
+    audio_flush_pending();
 }
 
+void audio_get_debug(uint32_t *sent, uint32_t *written, uint32_t *requested)
+{
+    *sent = audio_bytes_sent; *written = audio_bytes_written; *requested = audio_dbg_requested;
+}
 uint32_t audio_get_underrun_count(void)
 {
     return audio_underruns;

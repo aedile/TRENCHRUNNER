@@ -315,15 +315,30 @@ void tms5220_tick(tms5220_t *t, unsigned cpu_cycles)
         if (next == t->ring_r) t->ring_r = (t->ring_r + 1) & (RING_SIZE - 1);   /* overrun: drop oldest */
         t->ring[t->ring_w] = v;
         t->ring_w = next;
+        t->dbg_written++;
     }
 }
+
+/* The mixer runs from the DAC clock and the synthesizer from the emulated CPU, so the ring
+ * level jitters by up to one main-loop pass. Give each phrase this much of a head start
+ * before draining it, otherwise the reads run ahead of the writes and every gap is a click. */
+#ifndef RING_LEAD
+#define RING_LEAD 512              /* 61 ms at 8.4 kHz; the ring holds 244 ms */
+#endif
 
 void tms5220_render(tms5220_t *t, int16_t *buf, int samples, int sample_rate)
 {
     /* drain the 8.4 kHz ring with linear interpolation into the mixer rate */
     uint32_t step = (uint32_t)(((uint64_t)TMS_SAMPLE_RATE << 16) / (uint32_t)sample_rate);
-    if (t->ring_r == t->ring_w && t->prev_out == 0 && t->last_sample == 0) {
-        return;                                     /* nothing queued and already silent */
+    t->dbg_render_calls++; t->dbg_rate = (uint32_t)sample_rate;
+    unsigned fill = (t->ring_w - t->ring_r) & (RING_SIZE - 1);
+    if (fill == 0 && t->prev_out == 0 && t->last_sample == 0) {
+        t->draining = 0;                            /* nothing queued and already silent */
+        return;
+    }
+    if (!t->draining) {
+        if (fill < RING_LEAD && t->TALKD) return;   /* let the phrase build a lead first */
+        t->draining = 1;
     }
     for (int i = 0; i < samples; i++) {
         t->resample_acc += step;
@@ -333,8 +348,10 @@ void tms5220_render(tms5220_t *t, int16_t *buf, int samples, int sample_rate)
             if (t->ring_r != t->ring_w) {
                 t->last_sample = t->ring[t->ring_r];
                 t->ring_r = (t->ring_r + 1) & (RING_SIZE - 1);
+                t->dbg_read++;
             } else {
                 t->last_sample = 0;                 /* underrun: the synth hasn't produced this yet */
+                if (t->TALKD) t->underruns++;
             }
         }
         int32_t frac = t->resample_acc;              /* 0..65535 */

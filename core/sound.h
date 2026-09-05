@@ -27,6 +27,8 @@ uint8_t snd_ready_flags(void);          /* main reads 0x4401: bit7 = command pen
 
 /* audio output: mixes the four POKEYs (and speech) into signed 16-bit mono */
 void snd_render(int16_t *buf, int samples, int sample_rate);
+uint32_t snd_speech_underruns(void);
+void snd_speech_debug(uint32_t *written, uint32_t *rd, uint32_t *calls, uint32_t *rate, uint32_t *talkd);   /* diagnostic: speech ring read while empty mid-phrase */
 
 /* diagnostics */
 uint16_t snd_pc(void);

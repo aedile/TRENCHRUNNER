@@ -272,6 +272,8 @@ int main(int argc, char **argv)
         printf("wrote %s (%u samples)\n", wav_path, wav_samples);
     }
     printf("AVG fast-path check: %u frames, %u mismatches\n", sw_dbg_avg_frames, sw_dbg_avg_mismatch);
+    { uint32_t w, r, c, rt, tk; snd_speech_debug(&w, &r, &c, &rt, &tk);
+      printf("speech: written %u read %u gaps %u render-calls %u rate %u talkd %u\n", w, r, (unsigned)snd_speech_underruns(), c, rt, tk); }
     printf("done: %.1fs, %u irqs, %u vector frames (%.1f fps), %d images saved\n",
            now_s, sw_irq_count(), sw_frame_count(), sw_frame_count() / seconds, frames_saved);
     return 0;

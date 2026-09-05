@@ -41,6 +41,9 @@ typedef struct {
     unsigned ring_w, ring_r;
     uint32_t resample_acc;
     int16_t prev_out;
+    uint8_t draining;        /* the mixer has started on the current phrase */
+    uint32_t underruns;      /* diagnostic: mixer reads that found the ring empty mid-phrase */
+    uint32_t dbg_written, dbg_read, dbg_render_calls, dbg_rate;   /* diagnostics */
     /* diagnostics */
     uint32_t commands, bytes_in, frames, talk_starts;
 } tms5220_t;

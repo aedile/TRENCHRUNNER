@@ -66,6 +66,8 @@ void audio_set_power_state(bool enabled);
  * @param muted true to mute audio, false to unmute
  */
 void audio_set_mute(bool muted);
+/* diagnostics: DMA bytes consumed, bytes accepted by the driver, bytes we asked to write */
+void audio_get_debug(uint32_t *sent, uint32_t *written, uint32_t *requested);
 
 /**
  * Get current mute state

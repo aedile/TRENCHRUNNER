@@ -7,7 +7,7 @@ original ROM code on a Waveshare ESP32-C6-LCD-1.69 module, the same $20 board
 that powers [PELLETINO](https://github.com/aedile/PELLETINO), the
 Pac-Man Fiesta medal. If you're not from San Antonio: Fiesta medals are the
 pins people collect and trade every April, and one-upping each other's medals
-is half the point. You hold it sideways like a flight yoke, tilt to fly, and
+is half the point. You hold it upright like any other medal, tilt to fly, and
 press the button to fire. The music, the sound effects and the speech all come
 out of the medal's little speaker.
 
@@ -99,8 +99,11 @@ All of that is emulated here, in plain C, and it runs in real time on a single
 
 ## Playing
 
-Hold the medal sideways, screen facing you, so the long edge is horizontal.
-The game draws in landscape because the arcade monitor was landscape.
+Hold the medal upright, screen facing you, the way it hangs on a pin. The
+arcade monitor was a 4:3 landscape picture, so the game is drawn letterboxed
+across the middle of the upright panel, with black bars above and below.
+(`ORIENTATION_PORTRAIT` in `main/render.cpp` switches back to the sideways
+layout.)
 
 * **Tilt** is the flight yoke. Pitch and steer the way you'd move a yoke. The
   first time you press fire, the medal records how you're holding it and
@@ -114,6 +117,15 @@ The game draws in landscape because the arcade monitor was landscape.
 The game is set to free play with six shields on the easy difficulty. To
 change that, edit the `sw_set_dips` call in `main/main.cpp`; the DIP switch
 bits are documented next to it.
+
+### Marquee
+
+The black bars can carry text in the game's own vector lettering: a line for
+the top bar and one for the bottom, static and centred or scrolling, in any of
+the vector colours, with asterisks in a colour of their own. It is off by
+default; the `marquee_set` calls in `main/main.cpp` (behind `MARQUEE_DEMO`)
+show how to switch it on. Build with `-DMARQUEE_DEMO` in `EXTRA_CXXFLAGS` to
+try the sample text.
 
 ## Running it on your computer
 
