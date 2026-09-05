@@ -16,7 +16,8 @@ extern "C" {
 
 /* rom: 16KB = 136021.107 (CPU 0x4000/0xC000) followed by 136021.208 (0x6000/0xE000) */
 void snd_init(const uint8_t *rom);
-void snd_reset(void);
+void snd_reset(void);            /* power-on reset of the whole board */
+void snd_cpu_reset(void);        /* main CPU's SOUNDRST: resets the sound CPU only */
 uint32_t snd_run(uint32_t cycles);
 
 /* main CPU side of the latches */
@@ -36,7 +37,7 @@ uint64_t snd_total_cycles(void);
 uint32_t snd_idle_skipped(void);        /* cycles skipped in the idle loop since last call */
 #ifdef SW_DEBUG
 extern uint32_t snd_dbg_pc_hist[0x10000];
-extern int snd_dbg_log_pokey;
+extern int snd_dbg_log_pokey, snd_dbg_log_tms;
 void snd_dbg_dump(void);
 #endif
 

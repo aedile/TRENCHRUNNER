@@ -314,7 +314,7 @@ static void io_write(uint16_t a, uint8_t d)
         case 0x46c0:
             if (a <= 0x46c3) adc_channel = a & 3;
             break;
-        case 0x46e0: if (sound_enabled) snd_reset(); break;   /* sound CPU reset */
+        case 0x46e0: if (sound_enabled) snd_cpu_reset(); break;   /* sound CPU reset */
         case 0x4700:
             if (a <= 0x4707) math_w(a & 7, d);
             break;

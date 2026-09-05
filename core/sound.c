@@ -42,7 +42,7 @@ static uint32_t irq_count, pokey_writes, commands;
 #ifdef SW_DEBUG
 #include <stdio.h>
 uint32_t snd_dbg_pc_hist[0x10000];
-int snd_dbg_log_pokey;
+int snd_dbg_log_pokey, snd_dbg_log_tms;
 #endif
 
 static pokey_t pokey[4];
@@ -54,8 +54,8 @@ void snd_dbg_dump(void)
         printf("   POKEY%d audf %02X %02X %02X %02X audc %02X %02X %02X %02X ctl %02X skctl %02X\n", i,
                pokey[i].audf[0], pokey[i].audf[1], pokey[i].audf[2], pokey[i].audf[3],
                pokey[i].audc[0], pokey[i].audc[1], pokey[i].audc[2], pokey[i].audc[3], pokey[i].audctl, pokey[i].skctl);
-    printf("   TMS: cmds %u talking %d fifo %d spoken %u  RIOT: timer_irq_en %d pa7_irq_en %d prescale %u\n",
-           tms.commands, tms.talking, tms.fifo_count, tms.bytes_spoken, riot_timer_irq_en, riot_pa7_irq_en, riot_prescale);
+    printf("   TMS: cmds %u bytes %u frames %u talk_starts %u talking %d fifo %d  RIOT: timer_irq_en %d pa7_irq_en %d prescale %u\n",
+           tms.commands, tms.bytes_in, tms.frames, tms.talk_starts, tms.TALKD, tms.fifo_count, riot_timer_irq_en, riot_pa7_irq_en, riot_prescale);
 }
 #endif
 
@@ -112,6 +112,9 @@ static void riot_write(uint16_t a, uint8_t d)
             case 0: {
                 uint8_t old = riot_pa_out;
                 riot_pa_out = d;
+#ifdef SW_DEBUG
+                if (snd_dbg_log_tms && ((old ^ d) & 0x03)) printf("  TMS ctl: /WS %d /RS %d data %02X (DDIS %d fifo %d)\n", d & 1, (d >> 1) & 1, riot_pb_out, tms.DDIS, tms.fifo_count);
+#endif
                 /* TMS5220 control lines are outputs on PA0 (/WS) and PA1 (/RS) */
                 if ((old ^ d) & 0x01) tms5220_wsq(&tms, d & 0x01);
                 if ((old ^ d) & 0x02) tms5220_rsq(&tms, (d >> 1) & 0x01);
@@ -222,6 +225,12 @@ void snd_init(const uint8_t *r)
     snd_reset();
 }
 
+void snd_cpu_reset(void)
+{
+    cmd_pending = reply_pending = 0;
+    snd_e6809_reset();
+}
+
 void snd_reset(void)
 {
     memset(ram, 0, sizeof(ram));
@@ -285,11 +294,12 @@ void snd_command_write(uint8_t d) { cmd_val = d; cmd_pending = 1; commands++; }
 uint8_t snd_reply_read(void) { reply_pending = 0; return reply_val; }
 uint8_t snd_ready_flags(void) { return (cmd_pending ? 0x80 : 0) | (reply_pending ? 0x40 : 0); }
 
+int snd_render_mask = 0x1f;   /* bit i: POKEY i; bit 4: speech (diagnostics) */
 void snd_render(int16_t *buf, int samples, int sample_rate)
 {
     memset(buf, 0, samples * sizeof(int16_t));
-    for (int i = 0; i < 4; i++) pokey_render(&pokey[i], buf, samples, sample_rate);
-    tms5220_render(&tms, buf, samples, sample_rate);
+    for (int i = 0; i < 4; i++) if (snd_render_mask & (1 << i)) pokey_render(&pokey[i], buf, samples, sample_rate);
+    if (snd_render_mask & 0x10) tms5220_render(&tms, buf, samples, sample_rate);
 }
 
 uint16_t snd_pc(void) { return (uint16_t)snd_e6809_get_pc(); }

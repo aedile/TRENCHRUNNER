@@ -16,8 +16,8 @@ speech synthesizer. The monitor is a horizontally mounted color vector display.
 
 - Main board: boots, plays, takes yoke input. Mathbox, divider, PRNG, ROM
   banking and the AVG are ports of MAME's implementations (BSD-3-Clause).
-- Sound board: 6809, RIOT timer/PA7 interrupts, POKEY music and effects.
-  TMS5220 speech accepts data and reports status; synthesis is not done yet.
+- Sound board: 6809, RIOT timer/PA7 interrupts, POKEY music and effects,
+  TMS5220 speech (LPC-10 synthesis following MAME's implementation).
 - ESP32: full game speed at the game's own vector frame rate (~27-40 fps),
   rendering in a separate task, tilt yoke, BOOT button fires, PWR short press
   inserts a coin and re-centers the yoke, PWR long press powers off.
@@ -44,7 +44,8 @@ docker run --rm -v "$PWD":/project -w /project espressif/idf:v5.3.4 idf.py -B bu
 python3 -m esptool --chip esp32c6 --port /dev/cu.usbmodem* -b 460800 write_flash @build_docker/flash_args
 ```
 
-Host harness: `cd host && make && ./harness ../starwars out 20 --dsw1 0 --script "3:fire=1,3.3:fire=0"`.
+Host harness: `cd host && make && ./harness ../starwars out 20 --dsw1 0 --script "3:fire=1,3.3:fire=0" --wav out/audio.wav`.
+`RENDERMASK=0x10` renders only the speech chip, `0x0f` only the POKEYs; `python3 ppm2png.py out/*.ppm` converts frames.
 
 ## Licenses
 

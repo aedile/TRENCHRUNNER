@@ -182,6 +182,8 @@ int main(int argc, char **argv)
     memcpy(rom_sound + 0x2000, load(romdir, "136021.208", 0x2000), 0x2000);
     if (!nosound) sw_attach_sound(rom_sound);
     if (getenv("POKEYLOG")) snd_dbg_log_pokey = 1;
+    if (getenv("TMSLOG")) snd_dbg_log_tms = 1;
+    { extern int snd_render_mask; if (getenv("RENDERMASK")) snd_render_mask = (int)strtol(getenv("RENDERMASK"), NULL, 0); }
     FILE *wav = NULL;
     const int wav_rate = 20050;
     uint32_t wav_samples = 0;
