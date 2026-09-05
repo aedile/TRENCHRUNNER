@@ -9,6 +9,8 @@ media/
 # ROMs are not distributable
 starwars/
 starwars.zip
+esb/
+esb.zip
 roms/
 main/roms/*.h
 host/harness

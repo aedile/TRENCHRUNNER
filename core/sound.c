@@ -19,7 +19,9 @@ static inline __attribute__((always_inline)) void snd_write(unsigned addr, unsig
 #include "e6809.c"
 
 /* ---- memory ---- */
-static const uint8_t *rom;          /* 16KB */
+static const uint8_t *rom;          /* 16KB (mirrored) or 32KB */
+static unsigned idle_lo = 0x7d4c, idle_hi = 0x7d5f;   /* sound program idle loop (Star Wars); ESB's is not located yet */
+static unsigned rom_hi;             /* offset of the 0xC000-0xFFFF image within rom */
 static uint8_t ram[0x800];          /* 0x2000-0x27FF */
 static uint8_t riot_ram[0x80];      /* 0x1000-0x107F */
 
@@ -38,6 +40,9 @@ static uint8_t riot_timer_expired;   /* after expiry the timer runs at /1 and wr
 
 /* ---- stats ---- */
 static uint64_t total_cycles;
+#ifdef SW_DEBUG
+extern uint32_t snd_dbg_pass_hist[64];
+#endif
 static uint32_t irq_count, pokey_writes, commands;
 #ifdef SW_DEBUG
 #include <stdio.h>
@@ -217,7 +222,7 @@ static inline __attribute__((always_inline)) unsigned char snd_read(unsigned add
     if (a < 0x4000) return 0xff;
     if (a < 0x8000) return rom[a - 0x4000];
     if (a < 0xc000) return 0xff;
-    return rom[a - 0xc000];
+    return rom[a - 0xc000 + rom_hi];
 }
 
 static inline __attribute__((always_inline)) void snd_write(unsigned addr, unsigned char d)
@@ -248,9 +253,13 @@ static inline __attribute__((always_inline)) void snd_write(unsigned addr, unsig
 }
 
 /* ---- public ---- */
-void snd_init(const uint8_t *r)
+void snd_init(const uint8_t *r, unsigned size)
 {
     rom = r;
+    rom_hi = size >= 0x8000 ? 0x4000 : 0;
+    /* ESB's poll loop (0xFD42-0xFD55) also counts a software timer down in X, so it is not
+     * idle: skipping it silences the game. No sound-CPU skipping for ESB. */
+    if (rom_hi) { idle_lo = 1; idle_hi = 0; }
     for (int i = 0; i < 4; i++) pokey_init(&pokey[i]);
     tms5220_init(&tms);
     snd_reset();
@@ -294,7 +303,39 @@ uint32_t snd_run(uint32_t cycles)
         if (irq) irq_count++;
         if (!irq) {
             unsigned pc = snd_e6809_get_pc() & 0xffff;
-            if (pc >= IDLE_LOOP_LO && pc <= IDLE_LOOP_HI) {
+#ifndef SW_NOSKIP
+            /* ESB: the poll loop at FD42-FD55 (LDA <$00 / CMPA #$3F / BNE ... / LEAX -1,X / BEQ /
+             * LSR <$0B / BCC) is 37 cycles a pass and counts X down as a software timer. At its
+             * top, with the exit conditions false, whole passes can be skipped as long as X is
+             * decremented to match and at least one pass is left for the timer to fire naturally. */
+            if (rom_hi && pc == 0xfd42 && reg_dp == 0x10 && riot_ram[0] == 0x3f && !(riot_ram[0x0b] & 1) && reg_x > 1) {
+                uint32_t to_expiry = riot_cycles_to_expiry();
+                uint32_t skip = cycles - run;
+                /* leave the pass in which the timer expires to run for real, so the IRQ lands mid-pass as on hardware */
+                if (to_expiry && to_expiry - 1 < skip) skip = to_expiry - 1;
+                uint32_t passes = skip / 37;
+                if (passes > reg_x - 1) passes = reg_x - 1;
+                /* the loop's LSR <$0B shifts a bit pattern out one bit per pass and leaves the loop
+                 * on the first 1 bit: only the passes that shift out zeros can be skipped */
+                if (riot_ram[0x0b]) { uint32_t zeros = (uint32_t)__builtin_ctz(riot_ram[0x0b]); if (passes > zeros) passes = zeros; }
+                if (passes >= 1) {
+                    uint32_t cyc = passes * 37;
+                    reg_x -= passes;
+                    riot_ram[0x0b] = (uint8_t)(riot_ram[0x0b] >> passes);
+                    riot_tick(cyc);
+                    tms5220_tick(&tms, cyc);
+                    total_cycles += cyc;
+                    run += cyc;
+                    idle_skipped += cyc;
+                    continue;
+                }
+            }
+#endif
+#ifdef SW_NOSKIP
+            if (0) {
+#else
+            if (pc >= idle_lo && pc <= idle_hi) {
+#endif
                 uint32_t to_expiry = riot_cycles_to_expiry();
                 uint32_t skip = cycles - run;
                 if (to_expiry && to_expiry < skip) skip = to_expiry;
@@ -311,6 +352,8 @@ uint32_t snd_run(uint32_t cycles)
         }
 #ifdef SW_DEBUG
         snd_dbg_pc_hist[snd_e6809_get_pc() & 0xffff]++;
+        { static uint64_t last_fd42; unsigned p2 = snd_e6809_get_pc() & 0xffff;
+          if (p2 == 0xfd42) { if (last_fd42 && total_cycles - last_fd42 < 64) snd_dbg_pass_hist[total_cycles - last_fd42]++; last_fd42 = total_cycles; } }
 #endif
         unsigned c = snd_e6809_sstep(irq, 0);
         riot_tick(c);
@@ -345,6 +388,9 @@ uint32_t snd_pokey_writes(void) { return pokey_writes; }
 uint32_t snd_commands(void) { return commands; }
 uint64_t snd_total_cycles(void) { return total_cycles; }
 uint32_t snd_speech_underruns(void) { return tms.underruns; }
+#ifdef SW_DEBUG
+uint32_t snd_dbg_pass_hist[64];
+#endif
 void snd_speech_debug(uint32_t *written, uint32_t *rd, uint32_t *calls, uint32_t *rate, uint32_t *talkd)
 { *written = tms.dbg_written; *rd = tms.dbg_read; *calls = tms.dbg_render_calls; *rate = tms.dbg_rate; *talkd = tms.TALKD; }
 uint32_t snd_idle_skipped(void) { uint32_t v = idle_skipped; idle_skipped = 0; return v; }

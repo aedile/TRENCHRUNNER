@@ -6,6 +6,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <string.h>
+#include <math.h>
 #include <stdlib.h>
 
 #include "display.h"
@@ -18,7 +19,7 @@
 #include "audio_hal.h"
 #include "sound.h"
 
-static const char *TAG = "TRENCH";
+static const char *TAG = "WALKER";
 
 #define DEBUG_LOG 1
 
@@ -44,7 +45,7 @@ extern "C" void app_main(void)
 #if !DEBUG_LOG
     esp_log_level_set("*", ESP_LOG_NONE);
 #endif
-    ESP_LOGI(TAG, "TRENCHRUNNER starting, free heap %lu", (unsigned long)esp_get_free_heap_size());
+    ESP_LOGI(TAG, "WALKERRUN starting, free heap %lu", (unsigned long)esp_get_free_heap_size());
 
     display_init();
     display_set_backlight(DISPLAY_BRIGHTNESS_ACTIVE);
@@ -69,15 +70,32 @@ extern "C" void app_main(void)
         return (const uint8_t *)dst;
     };
     sw_roms_t roms = {
+#ifdef SW_GAME_ESB
+        .rom_main = to_ram(sw_rom_main, 0x6000),          /* page 0 carries ~83% of fetches */
+#else
         .rom_main = to_ram(sw_rom_main, sizeof(sw_rom_main)),
+#endif
         .rom_bank = to_ram(sw_rom_bank, sizeof(sw_rom_bank)),
         .rom_vector = to_ram(sw_rom_vector, sizeof(sw_rom_vector)),
         .prom_mathbox = sw_prom_mathbox,
         .prom_avg = to_ram(sw_prom_avg, sizeof(sw_prom_avg)),
+#ifdef SW_GAME_ESB
+        .rom_slapstic = sw_rom_slapstic,   /* 2% of fetches on the host profile: flash is fine, and RAM is short */
+        .rom_main_page1 = sw_rom_main + 0x6000,                  /* page 1 from flash (17% of fetches)... */
+        .rom_main_page1_c = to_ram(sw_rom_main + 0x6000 + 0x2000, 0x2000),   /* ...except its C000-DFFF third, which is most of that */
+#else
+        .rom_slapstic = nullptr,
+        .rom_main_page1 = nullptr,
+        .rom_main_page1_c = nullptr,
+#endif
     };
     sw_init(&roms);
-    sw_attach_sound(sw_rom_sound);      /* the sound CPU is mostly idle: flash is fine for its ROM */
+    sw_attach_sound(sw_rom_sound, sizeof(sw_rom_sound));   /* the sound CPU is mostly idle: flash is fine for its ROM */
+#ifdef SW_GAME_ESB
+    sw_set_dips(0xfb, 0x00);     /* 4 shields, easy, Jedi letters increment, demo sounds, freeze off; free play */
+#else
     sw_set_dips(0x90, 0x00);     /* 6 shields, easy, 1 bonus shield, demo sounds; free play */
+#endif
     sw_set_frame_callback(on_frame, nullptr);
     sw_set_time_source([]() -> uint64_t { return (uint64_t)esp_timer_get_time(); });
     ESP_LOGI(TAG, "emulation ready, free heap %lu", (unsigned long)esp_get_free_heap_size());
@@ -94,6 +112,14 @@ extern "C" void app_main(void)
         last_us = now;
 
         input_update(sw_input());
+#ifdef SW_AUTOPLAY
+        {   /* self-playing for on-device profiling: start, let the countdown pick a wave, fire and weave */
+            static int64_t t_start = now; double t = (now - t_start) / 1e6; sw_input_t *in = sw_input();
+            in->fire = (t >= 5 && t < 5.3) || (t >= 20 && fmod(t, 6.0) < 0.3);
+            in->yaw = t < 26 ? 0x80 : (fmod(t, 12.0) < 6 ? 0x60 : 0xa0);
+            in->pitch = t < 60 ? 0x80 : (fmod(t, 15.0) < 7 ? 0x60 : 0x90);
+        }
+#endif
         int gesture = input_take_gesture();
 #ifdef EGG_TEST
         { static bool fired; if (!fired && now - last_report > 8000000) { fired = true; gesture = GESTURE_EGG; } }

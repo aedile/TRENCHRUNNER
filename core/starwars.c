@@ -5,6 +5,7 @@
  * starwars.cpp / starwars_m.cpp (BSD-3-Clause, Steve Baines, Frank Palazzolo).
  */
 #include "starwars.h"
+#include "slapstic.h"
 #include "sound.h"
 #include <string.h>
 
@@ -14,11 +15,12 @@ static inline __attribute__((always_inline)) void cpu_write(unsigned addr, unsig
 static uint8_t io_read(uint16_t a);
 static void io_write(uint16_t a, uint8_t d);
 static uint8_t irq_line;
+static int snd_sync_break;   /* a sound command was just latched: end the chunk so the sound CPU can take it */
 #define E6809_READ8(a)     cpu_read(a)
 #define E6809_WRITE8(a, d) cpu_write(a, d)
 #define E6809_IRQ_LINE     irq_line
 static inline int at_wait_loop(void);
-#define E6809_BREAK_CHECK() at_wait_loop()
+#define E6809_BREAK_CHECK() (at_wait_loop() || snd_sync_break)
 #ifdef SW_DEBUG
 static void dbg_pre_step(void);
 #define E6809_PRE_STEP()   dbg_pre_step()
@@ -33,14 +35,23 @@ static uint8_t nvram[0x100];        /* 0x4500-0x45FF X2212 (4-bit) */
 static sw_roms_t roms;
 static uint8_t bank_sel;
 
-/* 256-byte page tables: non-NULL = direct memory, NULL = I/O or unmapped (slow path) */
+/* 256-byte page tables: non-NULL = direct memory, NULL = I/O or unmapped (slow path).
+ * ESB: the slapstic window 0x8000-0x9FFF stays NULL so every access there goes through the
+ * chip (about 2% of fetches); everything else is as fast as Star Wars. */
 static const uint8_t *rpage[256];
 static uint8_t *wpage[256];
+static int is_esb;                  /* rom_slapstic present: ESB memory map */
 
 static void map_bank(void)
 {
     const uint8_t *b = roms.rom_bank + (bank_sel ? 0x2000 : 0);
     for (int pg = 0x60; pg < 0x80; pg++) rpage[pg] = b + ((pg - 0x60) << 8);
+    if (is_esb) {                   /* ESB: the same latch bit pages 0xA000-0xFFFF too */
+        const uint8_t *m = bank_sel ? (roms.rom_main_page1 ? roms.rom_main_page1 : roms.rom_main + 0x6000) : roms.rom_main;
+        for (int pg = 0xa0; pg < 0x100; pg++) rpage[pg] = m + ((pg - 0xa0) << 8);
+        if (bank_sel && roms.rom_main_page1_c)
+            for (int pg = 0xc0; pg < 0xe0; pg++) rpage[pg] = roms.rom_main_page1_c + ((pg - 0xc0) << 8);
+    }
 }
 
 static void map_init(void)
@@ -51,7 +62,8 @@ static void map_init(void)
     for (int pg = 0x30; pg < 0x40; pg++) rpage[pg] = roms.rom_vector + ((pg - 0x30) << 8);
     for (int pg = 0x48; pg < 0x50; pg++) { rpage[pg] = ram_main + ((pg - 0x48) << 8); wpage[pg] = ram_main + ((pg - 0x48) << 8); }
     for (int pg = 0x50; pg < 0x60; pg++) { rpage[pg] = mathram + ((pg - 0x50) << 8);  wpage[pg] = mathram + ((pg - 0x50) << 8); }
-    for (int pg = 0x80; pg < 0x100; pg++) rpage[pg] = roms.rom_main + ((pg - 0x80) << 8);
+    if (!is_esb) for (int pg = 0x80; pg < 0x100; pg++) rpage[pg] = roms.rom_main + ((pg - 0x80) << 8);
+    if (is_esb) slapstic_reset();
     map_bank();
 }
 
@@ -76,7 +88,10 @@ uint8_t sw_dbg_last_snd_cmd;
 uint32_t sw_dbg_irq_taken;          /* IRQ vector fetches */
 int sw_dbg_trace_arm;                /* set to 1 to trace the next IRQ handler */
 uint16_t sw_dbg_trace[2000]; int sw_dbg_trace_n; static int trace_active;
+#define SW_DBG_RING 16384
+uint16_t sw_dbg_ring[SW_DBG_RING]; unsigned sw_dbg_ring_i; int sw_dbg_ring_frozen; unsigned sw_dbg_halt_pc = 0x10000;
 uint32_t sw_dbg_pc_hist[0x10000];    /* instructions started per PC */
+uint32_t sw_dbg_bank_hist[2][8];     /* samples per 8 KB region, by ROM bank page */
 uint32_t sw_dbg_avg_frames, sw_dbg_avg_mismatch, sw_dbg_soundrst;
 int sw_dbg_log_flags;
 #include <stdio.h>
@@ -263,7 +278,10 @@ static void io_write(uint16_t a, uint8_t d)
 {
     switch (a & 0xffe0) {
         case 0x4400:
-            if (a == 0x4400) { if (sound_enabled) snd_command_write(d); DBG(sw_dbg_snd_writes++; sw_dbg_last_snd_cmd = d;) }
+            if (a == 0x4400) {
+                DBG(if (sw_dbg_log_flags && total_cycles > 26700000 && total_cycles < 26900000) printf("  CMD %02X at cyc %llu main pc %04X pending %d\n", d, (unsigned long long)total_cycles, e6809_get_pc() & 0xffff, sound_enabled ? (snd_ready_flags() >> 7) : 0);)
+                if (sound_enabled) { snd_command_write(d); snd_sync_break = 1; } DBG(sw_dbg_snd_writes++; sw_dbg_last_snd_cmd = d;)
+            }
             break;
         case 0x4500: case 0x4520: case 0x4540: case 0x4560:
         case 0x4580: case 0x45a0: case 0x45c0: case 0x45e0:
@@ -339,6 +357,11 @@ static inline __attribute__((always_inline)) unsigned char cpu_read(unsigned add
 #endif
     const uint8_t *p = rpage[a >> 8];
     if (p) return p[a & 0xff];
+    if (is_esb && (a & 0xe000) == 0x8000) {          /* slapstic window: the byte comes from the bank in force, then the chip sees the access */
+        uint8_t v = roms.rom_slapstic[((unsigned)slapstic_current_bank << 13) | (a & 0x1fff)];
+        slapstic_tweak(a & 0x1fff);
+        return v;
+    }
     if (a >= 0x4300 && a < 0x4800) return io_read(a);
     return 0xff;
 }
@@ -351,6 +374,7 @@ static inline __attribute__((always_inline)) void cpu_write(unsigned addr, unsig
 #endif
     uint8_t *p = wpage[a >> 8];
     if (p) { p[a & 0xff] = d; return; }
+    if (is_esb && (a & 0xe000) == 0x8000) { slapstic_tweak(a & 0x1fff); return; }
     if (a >= 0x4300 && a < 0x4800) io_write(a, d);
 }
 
@@ -358,6 +382,7 @@ static inline __attribute__((always_inline)) void cpu_write(unsigned addr, unsig
 void sw_init(const sw_roms_t *r)
 {
     roms = *r;
+    is_esb = roms.rom_slapstic != NULL;
     map_init();
     memset(&input, 0, sizeof(input));
     input.pitch = 0x80;
@@ -375,6 +400,7 @@ void sw_reset(void)
     memset(mathram, 0, sizeof(mathram));
     bank_sel = 0;
     map_bank();
+    if (is_esb) slapstic_reset();
     adc_channel = 0;
     total_cycles = 0;
     next_irq_at = SW_CPU_CYCLES_PER_IRQ;
@@ -393,7 +419,13 @@ void sw_reset(void)
 static void dbg_pre_step(void)
 {
     sw_dbg_pc_hist[e6809_get_pc() & 0xffff]++;
+    sw_dbg_bank_hist[bank_sel & 1][(e6809_get_pc() & 0xffff) >> 13]++;
     if (trace_active) { if (sw_dbg_trace_n < 2000) sw_dbg_trace[sw_dbg_trace_n++] = (uint16_t)e6809_get_pc(); else trace_active = 0; }
+    if (!sw_dbg_ring_frozen) {              /* rolling PC history, frozen at the first sight of sw_dbg_halt_pc */
+        unsigned rpc = e6809_get_pc() & 0xffff;
+        sw_dbg_ring[sw_dbg_ring_i++ & (SW_DBG_RING - 1)] = (uint16_t)rpc;
+        if (rpc == sw_dbg_halt_pc) sw_dbg_ring_frozen = 1;
+    }
 }
 #endif
 
@@ -402,13 +434,27 @@ static void dbg_pre_step(void)
  *   0x6032-0x6035  LDA $483F / BMI   waits for the IRQ handler to start the vector list
  * Both only advance from the IRQ handler, so with no interrupt pending nothing
  * observable happens until the next one: skip straight to it. */
+/* ESB (136031): 0xA331-0xA334 LDA <$46 / BMI in page 0 of 0xA000-0xFFFF waits for the IRQ
+ * handler to start the vector list; 0x6287-0x628B TST $4320 / BMI in page 1 of 0x6000-0x7FFF
+ * waits for the matrix processor. */
 static inline int in_wait_loop(unsigned pc)
 {
+#ifdef ESB_NO_WAIT
+    if (is_esb) return 0;
+#endif
+    if (is_esb) return pc >= 0xa331 && pc <= 0xa334;
     return (pc >= 0x6004 && pc <= 0x6012) || (pc >= 0x6032 && pc <= 0x6035);
 }
 /* 0xCDBD-0xCDC1: TST $4320 / BMI  waits for the matrix processor (MATH_RUN clear) */
 static inline int in_math_wait_loop(unsigned pc)
 {
+#ifdef ESB_NO_MATH
+    if (is_esb) return 0;
+#endif
+    if (is_esb) {                    /* TST $4320 / BMI loops: 6287 and D98E on page 1, B33B on page 0 */
+        if (bank_sel) return (pc >= 0x6287 && pc <= 0x628b) || (pc >= 0xd98e && pc <= 0xd992);
+        return pc >= 0xb33b && pc <= 0xb33f;
+    }
     return pc >= 0xcdbd && pc <= 0xcdc1;
 }
 static uint32_t main_idle_skipped;
@@ -419,9 +465,9 @@ static inline int at_wait_loop(void)
 }
 uint32_t sw_idle_skipped(void) { uint32_t v = main_idle_skipped; main_idle_skipped = 0; return v; }
 
-void sw_attach_sound(const uint8_t *rom_sound)
+void sw_attach_sound(const uint8_t *rom_sound, unsigned size)
 {
-    snd_init(rom_sound);
+    snd_init(rom_sound, size);
     sound_enabled = 1;
 }
 
@@ -439,12 +485,21 @@ uint32_t sw_run(uint32_t cycles)
         uint32_t chunk = cycles - run;
         uint64_t to_irq = next_irq_at - total_cycles;
         if (to_irq < chunk) chunk = (uint32_t)to_irq;
-        if (chunk > 256) chunk = 256;
+        /* The sound CPU normally runs in 256-cycle steps behind the main CPU. While a sound
+         * command is waiting in the latch, step in 32s instead: the real board answers a
+         * command within a few cycles, and the main program's "was my last command taken"
+         * check is sensitive to that. */
+        uint32_t lim = (sound_enabled && (snd_ready_flags() & 0x80)) ? 32 : 256;
+        if (chunk > lim) chunk = lim;
         if (chunk == 0) chunk = 1;
         unsigned c;
         unsigned pc = e6809_get_pc() & 0xffff;
         uint32_t skip = 0;
+#ifdef SW_NOSKIP
+        if (0) {
+#else
         if (!irq_line) {
+#endif
             if (!bank_sel && in_wait_loop(pc)) {
                 skip = chunk;                                   /* bounded by the next IRQ above */
             } else if (in_math_wait_loop(pc) && math_done_at > total_cycles) {
@@ -455,6 +510,7 @@ uint32_t sw_run(uint32_t cycles)
         if (skip > 24) {
             c = skip - 16;               /* leave a few cycles so the loop observes the event normally */
             main_idle_skipped += c;
+            DBG(if (sw_dbg_log_flags && total_cycles > 26700000 && total_cycles < 26900000) printf("  SKIP %u at cyc %llu pc %04X\n", c, (unsigned long long)total_cycles, pc);)
         } else {
             c = e6809_run(chunk);
         }
@@ -462,7 +518,10 @@ uint32_t sw_run(uint32_t cycles)
         run += c;
         if (sound_enabled) {
             snd_balance += (int32_t)c;
-            if (snd_balance >= 256) snd_balance -= (int32_t)snd_run((uint32_t)snd_balance);
+            /* a freshly latched command: run the sound CPU now, whatever the balance, so it is
+             * taken within the ~200 cycles the main program allows before it gives up */
+            if (snd_balance >= (int32_t)lim || snd_sync_break) { if (snd_balance > 0) snd_balance -= (int32_t)snd_run((uint32_t)snd_balance); }
+            snd_sync_break = 0;
         }
     }
     if (sound_enabled && snd_balance > 0) snd_balance -= (int32_t)snd_run((uint32_t)snd_balance);
@@ -480,3 +539,6 @@ uint32_t sw_frame_count(void) { return frame_count; }
 uint8_t sw_nvram_read(int idx) { return nvram[idx & 0xff]; }
 const uint8_t *sw_ram(void) { return ram_vec; }
 uint16_t sw_pc(void) { return (uint16_t)e6809_get_pc(); }
+#ifdef SW_DEBUG
+uint8_t sw_dbg_peek(uint16_t a) { return cpu_read(a); }
+#endif

@@ -22,11 +22,15 @@ extern "C" {
 
 typedef struct {
     /* program ROM images (caller owns the memory) */
-    const uint8_t *rom_main;      /* 32KB: CPU 0x8000-0xFFFF (102,203,104,206) */
-    const uint8_t *rom_bank;      /* 16KB: 136021.214, two 8KB pages for 0x6000-0x7FFF */
-    const uint8_t *rom_vector;    /* 4KB: 136021.105, CPU 0x3000-0x3FFF */
-    const uint8_t *prom_mathbox;  /* 4KB: 110,111,112,113 concatenated */
+    const uint8_t *rom_main;      /* Star Wars: 32KB at 0x8000-0xFFFF (102,203,104,206).
+                                     ESB: 48KB, two 24KB pages for 0xA000-0xFFFF (102/203/104 halves) */
+    const uint8_t *rom_bank;      /* 16KB, two 8KB pages for 0x6000-0x7FFF (136021.214 / 136031.101) */
+    const uint8_t *rom_vector;    /* 4KB: CPU 0x3000-0x3FFF */
+    const uint8_t *prom_mathbox;  /* 4KB: the four mathbox PROMs concatenated */
     const uint8_t *prom_avg;      /* 256B: 136021-105.1l */
+    const uint8_t *rom_slapstic;  /* ESB only: 32KB, four 8KB slapstic banks for 0x8000-0x9FFF (105+106); NULL for Star Wars */
+    const uint8_t *rom_main_page1; /* ESB only: optional separate 24KB image of rom_main's second page (lets it stay in flash); NULL = rom_main + 0x6000 */
+    const uint8_t *rom_main_page1_c; /* ESB only: optional 8KB copy of that page's 0xC000-0xDFFF third (the hot one) */
 } sw_roms_t;
 
 typedef struct {
@@ -49,7 +53,7 @@ uint32_t sw_run(uint32_t cycles);
 
 /* Attach the sound board (16KB: 136021.107 then 136021.208). Without it the
  * main CPU sees a silent, always-ready sound board. */
-void sw_attach_sound(const uint8_t *rom_sound);
+void sw_attach_sound(const uint8_t *rom_sound, unsigned size);   /* 16KB (Star Wars, mirrored) or 32KB (ESB) */
 
 /* Inputs are sampled by the game code; update this struct any time. */
 sw_input_t *sw_input(void);

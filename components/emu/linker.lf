@@ -5,3 +5,4 @@ archive: libemu.a
 entries:
     starwars (noflash)
     avg (noflash)
+    slapstic (noflash)

@@ -15,7 +15,7 @@ extern "C" {
 #endif
 
 /* rom: 16KB = 136021.107 (CPU 0x4000/0xC000) followed by 136021.208 (0x6000/0xE000) */
-void snd_init(const uint8_t *rom);
+void snd_init(const uint8_t *rom, unsigned size);   /* 16KB mirrored at 0x4000/0xC000, or 32KB */
 void snd_reset(void);            /* power-on reset of the whole board */
 void snd_cpu_reset(void);        /* main CPU's SOUNDRST: resets the sound CPU only */
 uint32_t snd_run(uint32_t cycles);

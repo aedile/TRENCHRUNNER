@@ -4,6 +4,7 @@
  * usage: harness <romdir> <outdir> [seconds] [--coin T] [--fire T] [--yaw V] [--pitch V]
  */
 #include <stdio.h>
+#include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
@@ -158,32 +159,65 @@ int main(int argc, char **argv)
         }
     }
 
-    uint8_t *rom_main = malloc(0x8000);
-    memcpy(rom_main + 0x0000, load(romdir, "136021.102", 0x2000), 0x2000);
-    memcpy(rom_main + 0x2000, load(romdir, "136021.203", 0x2000), 0x2000);
-    memcpy(rom_main + 0x4000, load(romdir, "136021.104", 0x2000), 0x2000);
-    memcpy(rom_main + 0x6000, load(romdir, "136021.206", 0x2000), 0x2000);
-    uint8_t *prom_math = malloc(0x1000);
-    memcpy(prom_math + 0x000, load(romdir, "136021.110", 0x400), 0x400);
-    memcpy(prom_math + 0x400, load(romdir, "136021.111", 0x400), 0x400);
-    memcpy(prom_math + 0x800, load(romdir, "136021.112", 0x400), 0x400);
-    memcpy(prom_math + 0xc00, load(romdir, "136021.113", 0x400), 0x400);
+    char probe[512]; snprintf(probe, sizeof(probe), "%s/136031.101", romdir);
+    int esb = access(probe, R_OK) == 0;
+    uint8_t *rom_main, *rom_bank, *rom_vector, *rom_slapstic = NULL, *prom_math = malloc(0x1000), *prom_avg, *rom_sound;
+    unsigned sound_size;
+    if (!esb) {
+        rom_main = malloc(0x8000);
+        memcpy(rom_main + 0x0000, load(romdir, "136021.102", 0x2000), 0x2000);
+        memcpy(rom_main + 0x2000, load(romdir, "136021.203", 0x2000), 0x2000);
+        memcpy(rom_main + 0x4000, load(romdir, "136021.104", 0x2000), 0x2000);
+        memcpy(rom_main + 0x6000, load(romdir, "136021.206", 0x2000), 0x2000);
+        memcpy(prom_math + 0x000, load(romdir, "136021.110", 0x400), 0x400);
+        memcpy(prom_math + 0x400, load(romdir, "136021.111", 0x400), 0x400);
+        memcpy(prom_math + 0x800, load(romdir, "136021.112", 0x400), 0x400);
+        memcpy(prom_math + 0xc00, load(romdir, "136021.113", 0x400), 0x400);
+        rom_bank = load(romdir, "136021.214", 0x4000);
+        rom_vector = load(romdir, "136021.105", 0x1000);
+        prom_avg = load(romdir, "136021-105.1l", 0x100);
+        rom_sound = malloc(0x4000); sound_size = 0x4000;
+        memcpy(rom_sound + 0x0000, load(romdir, "136021.107", 0x2000), 0x2000);
+        memcpy(rom_sound + 0x2000, load(romdir, "136021.208", 0x2000), 0x2000);
+    } else {
+        /* The Empire Strikes Back: 16 KB ROMs whose halves are the two pages of each bank */
+        uint8_t *r102 = load(romdir, "136031.102", 0x4000), *r203 = load(romdir, "136031.203", 0x4000), *r104 = load(romdir, "136031.104", 0x4000);
+        rom_main = malloc(0xc000);
+        memcpy(rom_main + 0x0000, r102, 0x2000); memcpy(rom_main + 0x2000, r203, 0x2000); memcpy(rom_main + 0x4000, r104, 0x2000);
+        memcpy(rom_main + 0x6000, r102 + 0x2000, 0x2000); memcpy(rom_main + 0x8000, r203 + 0x2000, 0x2000); memcpy(rom_main + 0xa000, r104 + 0x2000, 0x2000);
+        rom_bank = load(romdir, "136031.101", 0x4000);
+        rom_slapstic = malloc(0x8000);
+        memcpy(rom_slapstic, load(romdir, "136031.105", 0x4000), 0x4000);
+        memcpy(rom_slapstic + 0x4000, load(romdir, "136031.106", 0x4000), 0x4000);
+        rom_vector = load(romdir, "136031.111", 0x1000);
+        memcpy(prom_math + 0x000, load(romdir, "136031.110", 0x400), 0x400);
+        memcpy(prom_math + 0x400, load(romdir, "136031.109", 0x400), 0x400);
+        memcpy(prom_math + 0x800, load(romdir, "136031.108", 0x400), 0x400);
+        memcpy(prom_math + 0xc00, load(romdir, "136031.107", 0x400), 0x400);
+        prom_avg = load(romdir, "136021-105.1l", 0x100);
+        uint8_t *s113 = load(romdir, "136031.113", 0x4000), *s112 = load(romdir, "136031.112", 0x4000);
+        rom_sound = malloc(0x8000); sound_size = 0x8000;
+        memcpy(rom_sound + 0x0000, s113, 0x2000); memcpy(rom_sound + 0x2000, s112, 0x2000);
+        memcpy(rom_sound + 0x4000, s113 + 0x2000, 0x2000); memcpy(rom_sound + 0x6000, s112 + 0x2000, 0x2000);
+        printf("ROM set: The Empire Strikes Back\n");
+    }
 
     sw_roms_t roms = {
         .rom_main = rom_main,
-        .rom_bank = load(romdir, "136021.214", 0x4000),
-        .rom_vector = load(romdir, "136021.105", 0x1000),
+        .rom_bank = rom_bank,
+        .rom_vector = rom_vector,
         .prom_mathbox = prom_math,
-        .prom_avg = load(romdir, "136021-105.1l", 0x100),
+        .prom_avg = prom_avg,
+        .rom_slapstic = rom_slapstic,
+        .rom_main_page1 = NULL,
+        .rom_main_page1_c = NULL,
     };
     sw_init(&roms);
-    uint8_t *rom_sound = malloc(0x4000);
-    memcpy(rom_sound + 0x0000, load(romdir, "136021.107", 0x2000), 0x2000);
-    memcpy(rom_sound + 0x2000, load(romdir, "136021.208", 0x2000), 0x2000);
-    if (!nosound) sw_attach_sound(rom_sound);
+    if (!nosound) sw_attach_sound(rom_sound, sound_size);
     if (getenv("POKEYLOG")) snd_dbg_log_pokey = 1;
     if (getenv("TMSLOG")) snd_dbg_log_tms = 1;
     { extern int sw_dbg_log_flags; if (getenv("FLAGLOG")) sw_dbg_log_flags = 1; }
+    { extern unsigned sw_dbg_halt_pc; if (getenv("HALT_PC")) sw_dbg_halt_pc = (unsigned)strtol(getenv("HALT_PC"), NULL, 16); }
     { extern int snd_render_mask; if (getenv("RENDERMASK")) snd_render_mask = (int)strtol(getenv("RENDERMASK"), NULL, 0); }
     FILE *wav = NULL;
     const int wav_rate = 20050;
@@ -196,7 +230,7 @@ int main(int argc, char **argv)
     static int16_t abuf[4096];
     double audio_acc = 0;
     sw_set_frame_callback(on_frame, NULL);
-    sw_set_dips(0x98, (uint8_t)dsw1);
+    sw_set_dips(esb ? 0xfb : 0x98, (uint8_t)dsw1);
     sw_input()->yaw = (uint8_t)yaw;
     sw_input()->pitch = (uint8_t)pitch;
 
@@ -272,6 +306,34 @@ int main(int argc, char **argv)
         printf("wrote %s (%u samples)\n", wav_path, wav_samples);
     }
     printf("AVG fast-path check: %u frames, %u mismatches\n", sw_dbg_avg_frames, sw_dbg_avg_mismatch);
+    if (getenv("HALT_PC")) {
+        extern uint16_t sw_dbg_ring[]; extern unsigned sw_dbg_ring_i; extern int sw_dbg_ring_frozen;
+        printf("--- PC history before %s (%s), runs:\n", getenv("HALT_PC"), sw_dbg_ring_frozen ? "halt seen" : "halt NOT seen");
+        unsigned n = sw_dbg_ring_i < 16384 ? sw_dbg_ring_i : 16384, start = sw_dbg_ring_i - n;
+        unsigned run_lo = 0, run_hi = 0, have = 0; int printed = 0;
+        for (unsigned k = 0; k < n; k++) {
+            unsigned pc = sw_dbg_ring[(start + k) & 16383];
+            if (have && pc >= run_lo && pc <= run_hi + 4) { if (pc > run_hi) run_hi = pc; continue; }
+            if (have) { if (run_lo == run_hi) printf("%04X ", run_lo); else printf("%04X-%04X ", run_lo, run_hi); if (++printed % 12 == 0) printf("\n"); }
+            run_lo = run_hi = pc; have = 1;
+        }
+        if (have) printf("%04X-%04X\n", run_lo, run_hi);
+        { extern uint8_t sw_dbg_peek(uint16_t); extern uint8_t slapstic_state, slapstic_current_bank;
+          printf("slapstic state %u bank %u\n", slapstic_state, slapstic_current_bank);
+          for (unsigned a = 0x4e40; a < 0x4f10; a += 16) { printf("%04X:", a); for (unsigned i = 0; i < 16; i++) printf(" %02X", sw_dbg_peek((uint16_t)(a + i))); printf("\n"); }
+          printf("4800:"); for (unsigned i = 0; i < 16; i++) printf(" %02X", sw_dbg_peek((uint16_t)(0x4800 + i))); printf("\n"); }
+    }
+    { extern uint32_t snd_dbg_pass_hist[64]; int any = 0;
+      for (int i = 0; i < 64; i++) if (snd_dbg_pass_hist[i]) { if (!any) printf("sound poll-loop pass lengths:"); printf(" %d:%u", i, snd_dbg_pass_hist[i]); any = 1; }
+      if (any) printf("\n"); }
+    if (getenv("REGIONS")) {
+        static const char *names[8] = { "0000-1FFF", "2000-3FFF", "4000-5FFF", "6000-7FFF bank", "8000-9FFF slapstic", "A000-BFFF", "C000-DFFF", "E000-FFFF" };
+        uint64_t tot = 0, reg[8] = {0};
+        for (int i = 0; i < 0x10000; i++) { reg[i >> 13] += sw_dbg_pc_hist[i]; tot += sw_dbg_pc_hist[i]; }
+        for (int i = 0; i < 8; i++) printf("main CPU samples in %-20s %5.1f%%\n", names[i], tot ? 100.0 * reg[i] / tot : 0.0);
+        { extern uint32_t sw_dbg_bank_hist[2][8];
+          for (int b = 0; b < 2; b++) for (int i = 3; i < 8; i++) printf("  page %d %-20s %5.1f%%\n", b, names[i], tot ? 100.0 * sw_dbg_bank_hist[b][i] / tot : 0.0); }
+    }
     { uint32_t w, r, c, rt, tk; snd_speech_debug(&w, &r, &c, &rt, &tk);
       printf("speech: written %u read %u gaps %u render-calls %u rate %u talkd %u\n", w, r, (unsigned)snd_speech_underruns(), c, rt, tk); }
     printf("done: %.1fs, %u irqs, %u vector frames (%.1f fps), %d images saved\n",
