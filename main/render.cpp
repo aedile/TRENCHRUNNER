@@ -45,6 +45,7 @@ static uint16_t *chunk;                     /* RGB565 (byte-swapped) conversion 
 static uint16_t palette[256];
 static uint32_t frames_drawn, frames_dropped;
 static uint64_t busy_us;
+static volatile int render_active;          /* the task is between dequeue and the end of present() */
 
 /* palette index: bits 0-2 = AVG color (bit 2 red, bit 1 green, bit 0 blue, as in
  * MAME's vector color111), bits 3-7 intensity (0..31) */
@@ -148,6 +149,7 @@ static void render_task(void *arg)
     for (;;) {
         vlist_t *l;
         if (xQueueReceive(frame_q, &l, portMAX_DELAY) != pdTRUE) continue;
+        render_active = 1;
         int64_t t0 = esp_timer_get_time();
         rasterize(l);
         xQueueSend(free_q, &l, 0);            /* list consumed; emulator may reuse it */
@@ -155,6 +157,7 @@ static void render_task(void *arg)
         present();
         busy_us += (t1 - t0) + 2500;          /* rasterize + ~2.5 ms of chunk conversion inside present() */
         frames_drawn++;
+        render_active = 0;
     }
 }
 
@@ -195,6 +198,13 @@ void render_submit(const avg_point_t *points, int npoints)
     l->n = n;
     xQueueSend(frame_q, &l, 0);
 }
+
+void render_wait_idle(void)
+{
+    /* nothing may be submitted meanwhile; wait for queued frames to drain and the task to finish presenting */
+    while (uxQueueMessagesWaiting(frame_q) || render_active) vTaskDelay(1);
+}
+uint8_t *render_scratch(size_t *size) { *size = (size_t)FB_W * FB_H; return fb; }
 
 uint32_t render_frames_drawn(void) { uint32_t v = frames_drawn; frames_drawn = 0; return v; }
 uint32_t render_frames_dropped(void) { uint32_t v = frames_dropped; frames_dropped = 0; return v; }

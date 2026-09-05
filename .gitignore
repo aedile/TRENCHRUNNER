@@ -4,6 +4,8 @@ sdkconfig
 sdkconfig.old
 dependencies.lock
 managed_components/
+# easter-egg clips: not ours to distribute
+media/
 # ROMs are not distributable
 starwars/
 starwars.zip

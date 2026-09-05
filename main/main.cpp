@@ -13,6 +13,7 @@
 #include "starwars_roms.h"
 #include "render.h"
 #include "marquee.h"
+#include "egg.h"
 #include "input.h"
 #include "audio_hal.h"
 #include "sound.h"
@@ -93,6 +94,31 @@ extern "C" void app_main(void)
         last_us = now;
 
         input_update(sw_input());
+        int gesture = input_take_gesture();
+#ifdef EGG_TEST
+        { static bool fired; if (!fired && now - last_report > 8000000) { fired = true; gesture = GESTURE_EGG; } }
+#endif
+        switch (gesture) {
+        case GESTURE_TOGGLE_SOUND:
+            audio_set_mute(!audio_get_mute());
+            ESP_LOGI(TAG, "sound %s", audio_get_mute() ? "off" : "on");
+            break;
+        case GESTURE_EGG: {
+            static int next_clip = 0;
+            int n = egg_clip_count();
+            if (n > 0) {
+                audio_set_mute(false);
+                render_wait_idle();
+                egg_play(next_clip % n);
+                next_clip++;
+                sw_reset();                          /* back to the attract screen, like a fresh power-up */
+                now = esp_timer_get_time();
+                last_us = now;
+            }
+            break;
+        }
+        default: break;
+        }
 
         /* run the 6809 for the wall-clock time that passed (1.512 MHz) */
         uint32_t cycles = (uint32_t)(elapsed * SW_CPU_CLOCK / 1000000);

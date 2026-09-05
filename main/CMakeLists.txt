@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "main.cpp" "input.cpp" "render.cpp" "marquee.cpp"
+    SRCS "main.cpp" "input.cpp" "render.cpp" "marquee.cpp" "egg.cpp"
     INCLUDE_DIRS "." "roms"
-    REQUIRES driver esp_timer display imu emu audio_hal
+    REQUIRES driver esp_timer esp_partition display imu emu audio_hal helix_mp3
 )

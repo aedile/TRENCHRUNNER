@@ -66,6 +66,13 @@ void audio_set_power_state(bool enabled);
  * @param muted true to mute audio, false to unmute
  */
 void audio_set_mute(bool muted);
+/* Stream mode: while begun, audio_update() plays mixer-rate (AUDIO_SAMPLE_RATE) samples from
+ * this caller-owned ring instead of the game's mixer; underruns play silence. */
+void audio_stream_begin(int16_t *ring, uint32_t samples);
+void audio_stream_end(void);
+uint32_t audio_stream_space(void);     /* samples that can be pushed now */
+uint32_t audio_stream_queued(void);    /* samples waiting in the ring */
+uint32_t audio_stream_push(const int16_t *samples, uint32_t count);   /* returns how many were taken */
 /* diagnostics: DMA bytes consumed, bytes accepted by the driver, bytes we asked to write */
 void audio_get_debug(uint32_t *sent, uint32_t *written, uint32_t *requested);
 

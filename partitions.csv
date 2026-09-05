@@ -1,6 +1,7 @@
-# Name,   Type, SubType, Offset,   Size,    Flags
-# Custom partition table for PELLETINO with MJPEG video support
-# Total Flash: 4MB | App: 3.5MB | NVS: 24KB | PHY: 4KB | ROMs: 128KB | Storage: 64KB
-nvs,      data, nvs,     0x9000,   0x6000,
-phy_init, data, phy,     0xf000,   0x1000,
-factory,  app,  factory, 0x10000,  0x3F0000,
+# Name,   Type, SubType, Offset,    Size,     Flags
+# 16 MB flash (W25Q128 on the ESP32-C6-LCD-1.69). App 1 MB, then the packed
+# easter-egg media (MJPEG + MP3 clips, see tools/pack_media.py) at 0x110000.
+nvs,      data, nvs,     0x9000,    0x6000,
+phy_init, data, phy,     0xf000,    0x1000,
+factory,  app,  factory, 0x10000,   0x100000,
+media,    data, 0x40,    0x110000,  0xEE0000,

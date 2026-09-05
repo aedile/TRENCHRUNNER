@@ -195,6 +195,36 @@ void audio_init(void)
     ESP_LOGI(TAG, "Audio subsystem initialized");
 }
 
+// Stream mode: a caller-owned ring of mixer-rate samples replaces the game's mixer
+// (used by the easter egg's clip player). Underruns play silence.
+static int16_t *stream_ring = nullptr;
+static uint32_t stream_size = 0, stream_r = 0, stream_w = 0;
+
+void audio_stream_begin(int16_t *ring, uint32_t samples)
+{
+    stream_r = stream_w = 0;
+    stream_size = samples;
+    stream_ring = ring;
+}
+void audio_stream_end(void) { stream_ring = nullptr; }
+uint32_t audio_stream_queued(void) { return stream_ring ? (stream_w - stream_r) % stream_size : 0; }
+uint32_t audio_stream_space(void) { return stream_ring ? stream_size - 1 - audio_stream_queued() : 0; }
+uint32_t audio_stream_push(const int16_t *samples, uint32_t count)
+{
+    uint32_t space = audio_stream_space();
+    if (count > space) count = space;
+    for (uint32_t i = 0; i < count; i++) { stream_ring[stream_w] = samples[i]; stream_w = (stream_w + 1) % stream_size; }
+    return count;
+}
+static void stream_pull(int16_t *out, uint32_t count)
+{
+    uint32_t have = audio_stream_queued();
+    for (uint32_t i = 0; i < count; i++) {
+        if (i < have) { out[i] = stream_ring[stream_r]; stream_r = (stream_r + 1) % stream_size; }
+        else out[i] = 0;
+    }
+}
+
 // Samples rendered but not yet accepted by the driver (its queue was full). They are
 // written before anything new is rendered, so the mixer never runs ahead of the DAC:
 // every sample rendered is eventually played, in order.
@@ -239,7 +269,8 @@ void audio_update(void)
     if (samples > AUDIO_MAX_SAMPLES) samples = AUDIO_MAX_SAMPLES;
     if (samples == 0) return;
 
-    snd_render(sample_buffer, (int)samples, AUDIO_SAMPLE_RATE);
+    if (stream_ring) stream_pull(sample_buffer, samples);
+    else snd_render(sample_buffer, (int)samples, AUDIO_SAMPLE_RATE);
     audio_dbg_requested += samples * sizeof(int16_t);
     pending_off = 0; pending_len = samples;
     audio_flush_pending();
