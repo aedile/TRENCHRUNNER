@@ -1,11 +1,13 @@
 # TRENCHRUNNER
 
-Atari's 1983 *Star Wars* arcade game, running on a wearable medal.
+Atari's 1983 *Star Wars* arcade game, running on a Fiesta medal.
 
 This is an emulator of the original arcade board, not a remake. It runs the
 original ROM code on a Waveshare ESP32-C6-LCD-1.69 module, the same $20 board
 that powers [PELLETINO](https://github.com/jesse-r-castro/PELLETINO), the
-Pac-Man Fiesta medal. You hold it sideways like a flight yoke, tilt to fly, and
+Pac-Man Fiesta medal. If you're not from San Antonio: Fiesta medals are the
+pins people collect and trade every April, and one-upping each other's medals
+is half the point. You hold it sideways like a flight yoke, tilt to fly, and
 press the button to fire. The music, the sound effects and the speech all come
 out of the medal's little speaker.
 
@@ -17,7 +19,7 @@ watching the attract mode cycle when I was out of quarters. Owning one became
 the standard-issue childhood dream. Years later I got the Arcade1Up version,
 which scratches part of the itch, but from the moment I saw this tiny board
 with a screen on it the real dream became this: the actual game, the actual
-code, running on something I can wear around my neck.
+code, running on a pin on my shirt.
 
 ## What the original hardware is
 
