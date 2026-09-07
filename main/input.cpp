@@ -28,7 +28,6 @@ static const char *TAG = "INPUT";
 #define FULL_DEFLECTION_DEG 20.0f     /* this much tilt = yoke at its stop */
 #define DEADBAND_DEG 1.5f
 
-#define HUMAN_TILT_DEG 15.0f     /* a lean this far is someone flying, not a medal at rest */
 
 /* Sign of each axis; flip on hardware if the ship steers the wrong way */
 #define YAW_SIGN   (+1.0f)
@@ -72,8 +71,10 @@ void input_update(sw_input_t *in)
 
     in->fire  = st.boot;
     in->coin1 = st.coin ? 1 : 0;
-    human_active = st.boot || st.coin ||
-                   (st.tilt_valid && (fabsf(st.lr) > HUMAN_TILT_DEG || fabsf(st.ud) > HUMAN_TILT_DEG));
+    /* only the trigger takes the controls back from the autopilot. Tilt does not: the medal is
+     * worn and carried, and every step would have handed a game to someone who was not
+     * playing it. */
+    human_active = st.boot;
 
     if (st.tilt_valid) {
         in->yaw   = angle_to_adc(st.lr, YAW_SIGN);

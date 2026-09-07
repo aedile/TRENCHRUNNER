@@ -98,7 +98,7 @@ extern "C" void app_main(void)
      * person touching anything takes over at once.
      */
     ap_config_t ac = {};
-    ac.idle_us = 100u * 1000000u;
+    ac.idle_us = 5u * 1000000u;          /* five seconds while the timing is being felt out */
     ap_init(&ac);
     sw_set_time_source([]() -> uint64_t { return (uint64_t)esp_timer_get_time(); });
     ESP_LOGI(TAG, "emulation ready, free heap %lu", (unsigned long)esp_get_free_heap_size());
