@@ -21,15 +21,21 @@
 #include "qmi8658.h"
 #include "audio_hal.h"
 #include "esp_log.h"
+#include <math.h>
 
 static const char *TAG = "INPUT";
 
 #define FULL_DEFLECTION_DEG 20.0f     /* this much tilt = yoke at its stop */
 #define DEADBAND_DEG 1.5f
 
+#define HUMAN_TILT_DEG 15.0f     /* a lean this far is someone flying, not a medal at rest */
+
 /* Sign of each axis; flip on hardware if the ship steers the wrong way */
 #define YAW_SIGN   (+1.0f)
 #define PITCH_SIGN (+1.0f)
+
+static bool human_active;
+bool input_human_active(void) { return human_active; }
 
 static uint8_t angle_to_adc(float deg, float sign)
 {
@@ -66,6 +72,8 @@ void input_update(sw_input_t *in)
 
     in->fire  = st.boot;
     in->coin1 = st.coin ? 1 : 0;
+    human_active = st.boot || st.coin ||
+                   (st.tilt_valid && (fabsf(st.lr) > HUMAN_TILT_DEG || fabsf(st.ud) > HUMAN_TILT_DEG));
 
     if (st.tilt_valid) {
         in->yaw   = angle_to_adc(st.lr, YAW_SIGN);

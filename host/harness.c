@@ -8,6 +8,7 @@
 #include <string.h>
 #include <stdint.h>
 #include "starwars.h"
+#include "autoplay.h"
 #include "sound.h"
 
 #define SCALE 2
@@ -97,8 +98,10 @@ static void save_ppm(int idx)
     fclose(f);
 }
 
+static double dump_t[16]; static int ndump, ndumped;
 static void on_frame(const avg_t *avg, void *user)
 {
+    ap_frame(avg);
     (void)user;
     frames_seen++;
     last_points = avg->npoints;
@@ -118,6 +121,21 @@ static void on_frame(const avg_t *avg, void *user)
         }
         px = x; py = y; have_prev = 1;
     }
+    /* --dump: the raw vector list, one line per point, for looking at what the game draws */
+    for (int k = 0; k < ndump; k++) {
+        if (dump_t[k] >= 0 && now_s >= dump_t[k]) {
+            char path[600]; snprintf(path, sizeof path, "%s/points_%02d_t%.0f.txt", outdir, ndumped++, dump_t[k]);
+            FILE *f = fopen(path, "w");
+            if (f) {
+                for (int i = 0; i < avg->npoints; i++) {
+                    const avg_point_t *q = &avg->points[i];
+                    fprintf(f, "%d %d %u %u\n", (int)(q->x >> 16), (int)(q->y >> 16), q->color, q->intensity);
+                }
+                fclose(f);
+            }
+            dump_t[k] = -1;
+        }
+    }
     if (now_s >= next_save) {
         save_ppm(frames_saved++);
         printf("t=%.2fs saved frame %d: %d points, %d visible segments%s\n", now_s, frames_saved - 1,
@@ -133,7 +151,7 @@ int main(int argc, char **argv)
     snprintf(outdir, sizeof outdir, "%s", argv[2]);
     double seconds = argc > 3 && argv[3][0] != '-' ? atof(argv[3]) : 10.0;
     double coin_t = -1, fire_t = -1;
-    int yaw = 0x80, pitch = 0x80, dsw1 = 0x02, hold = 0, nosound = 0;
+    int yaw = 0x80, pitch = 0x80, dsw0 = 0x98, dsw1 = 0x02, hold = 0, nosound = 0, autoplay = 0;
     const char *wav_path = NULL;
     /* scripted events: "T:key=value,T:key=value" keys: fire coin pitch yaw b2 b3 b4 */
     struct ev { double t; char key[8]; int val; } evs[64]; int nev = 0;
@@ -143,8 +161,14 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--yaw") && i + 1 < argc) yaw = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--pitch") && i + 1 < argc) pitch = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--every") && i + 1 < argc) save_every = atof(argv[++i]);
+        else if (!strcmp(argv[i], "--dsw0") && i + 1 < argc) dsw0 = (int)strtol(argv[++i], NULL, 0);   /* the medal uses 0x90 0x00: free play */
         else if (!strcmp(argv[i], "--dsw1") && i + 1 < argc) dsw1 = (int)strtol(argv[++i], NULL, 0);
         else if (!strcmp(argv[i], "--hold")) hold = 1;
+        else if (!strcmp(argv[i], "--autoplay") && i + 1 < argc) autoplay = atoi(argv[++i]);   /* idle seconds before it flies */
+        else if (!strcmp(argv[i], "--dump") && i + 1 < argc) {      /* raw vector list at these times */
+            char *d = strdup(argv[++i]);
+            for (char *tok = strtok(d, ","); tok && ndump < 16; tok = strtok(NULL, ",")) dump_t[ndump++] = atof(tok);
+        }
         else if (!strcmp(argv[i], "--nosound")) nosound = 1;
         else if (!strcmp(argv[i], "--wav") && i + 1 < argc) wav_path = argv[++i];
         else if (!strcmp(argv[i], "--script") && i + 1 < argc) {
@@ -196,7 +220,8 @@ int main(int argc, char **argv)
     static int16_t abuf[4096];
     double audio_acc = 0;
     sw_set_frame_callback(on_frame, NULL);
-    sw_set_dips(0x98, (uint8_t)dsw1);
+    sw_set_dips((uint8_t)dsw0, (uint8_t)dsw1);
+    if (autoplay) { ap_config_t ac = { (uint32_t)autoplay * 1000000u, 0, 0 }; ap_init(&ac); }
     sw_input()->yaw = (uint8_t)yaw;
     sw_input()->pitch = (uint8_t)pitch;
 
@@ -206,8 +231,9 @@ int main(int argc, char **argv)
     while (sw_total_cycles() < target) {
         now_s = (double)sw_total_cycles() / SW_CPU_CLOCK;
         if (nev == 0) {
-            sw_input()->coin1 = (coin_t >= 0 && now_s >= coin_t && now_s < coin_t + 0.25);
-            sw_input()->fire  = (fire_t >= 0 && now_s >= fire_t && (hold || now_s < fire_t + 0.25));
+            /* the --coin/--fire flags drive these only when given; otherwise --script owns them */
+            if (coin_t >= 0) sw_input()->coin1 = (now_s >= coin_t && now_s < coin_t + 0.25);
+            if (fire_t >= 0) sw_input()->fire  = (now_s >= fire_t && (hold || now_s < fire_t + 0.25));
         }
         for (int e = 0; e < nev; e++) {
             if (evs[e].t >= 0 && now_s >= evs[e].t) {
@@ -222,6 +248,7 @@ int main(int argc, char **argv)
                 evs[e].t = -1;
             }
         }
+        if (autoplay) ap_update(sw_input(), (uint64_t)(now_s * 1e6), 0);
         sw_run(slice);
         if (!nosound) {
             /* always run the audio path: the speech chip only advances while rendering */

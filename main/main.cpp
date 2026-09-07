@@ -10,6 +10,7 @@
 
 #include "display.h"
 #include "starwars.h"
+#include "autoplay.h"
 #include "starwars_roms.h"
 #include "render.h"
 #include "marquee.h"
@@ -28,6 +29,7 @@ static volatile bool emu_behind;       /* set while the emulator owes more than 
 /* The game issued VGGO with a complete vector list: hand it to the render task */
 static void on_frame(const avg_t *avg, void *user)
 {
+    ap_frame(avg);                       /* the autopilot looks at every frame, cheaply */
     (void)user;
     static bool skip_toggle;
     frames_emulated++;
@@ -90,6 +92,14 @@ extern "C" void app_main(void)
     sw_attach_sound(sw_rom_sound);      /* the sound CPU is mostly idle: flash is fine for its ROM */
     sw_set_dips(0x90, 0x00);     /* 6 shields, easy, 1 bonus shield, demo sounds; free play */
     sw_set_frame_callback(on_frame, nullptr);
+    /*
+     * The attract mode is eighty-five seconds of text. Left alone for about one run of it,
+     * the medal starts a game and flies it, aiming from the vector list it already draws. A
+     * person touching anything takes over at once.
+     */
+    ap_config_t ac = {};
+    ac.idle_us = 100u * 1000000u;
+    ap_init(&ac);
     sw_set_time_source([]() -> uint64_t { return (uint64_t)esp_timer_get_time(); });
     ESP_LOGI(TAG, "emulation ready, free heap %lu", (unsigned long)esp_get_free_heap_size());
 
@@ -105,6 +115,7 @@ extern "C" void app_main(void)
         last_us = now;
 
         input_update(sw_input());
+        ap_update(sw_input(), (uint64_t)now, input_human_active());
 
         /* run the 6809 for the wall-clock time that passed (1.512 MHz) */
         uint32_t cycles = (uint32_t)(elapsed * SW_CPU_CLOCK / 1000000);
