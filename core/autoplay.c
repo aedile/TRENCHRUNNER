@@ -12,7 +12,7 @@
 #define PLAY_Y1  258
 #define CX       125
 #define CY       155
-#define PORT_Y   200             /* low and centred: where the port comes up the trench */
+#define LEAD     1               /* frames to lead a moving target; the velocity estimate is noisy, so keep it small */
 
 /* what things are made of */
 #define COL_GREEN 2
@@ -37,8 +37,9 @@ static int have_frame;
 static int cross_x, cross_y, have_cross;
 static int tgt_x, tgt_y, have_tgt, ntargets;
 static int port_ahead;               /* the "EXHAUST PORT AHEAD" banner is up */
-static uint64_t port_seen_us;        /* when it was last up: the port itself comes a few seconds later */
+static int have_vp, vp_x, vp_y;      /* the trench's vanishing point: where the exhaust port appears */
 static int last_cx, last_cy, have_last;   /* the crosshair a frame ago, for damping */
+static int last_tx, last_ty, have_last_tgt, tvx, tvy;   /* the target a frame ago, for leading */
 static int in_trench;                /* the trench walls are on screen */
 
 void ap_init(const ap_config_t *c)
@@ -170,11 +171,48 @@ void ap_frame(const avg_t *avg)
         if (cl[i].n >= 25 && cl[i].x1 - cl[i].x0 >= 200 && cl[i].y1 - cl[i].y0 >= 150) in_trench = 1;
 
     /*
+     * The exhaust port has no mark of its own - it sits at the point the trench walls converge
+     * to. So when the walls are up, find that point: every long, sloped green segment lies on a
+     * line, and the least-squares intersection of those lines is the vanishing point, steady at
+     * about (128,165). That is where the port will be, and where to hold the crosshair and the
+     * trigger. Aiming at a fixed guess missed it by thirty pixels; this tracks it.
+     */
+    have_vp = 0;
+    if (in_trench) {
+        double Saa = 0, Sab = 0, Sbb = 0, Sac = 0, Sbc = 0; int m = 0;
+        int px = 0, py = 0;
+        for (int i = 0; i < avg->npoints; i++) {
+            const avg_point_t *q = &avg->points[i];
+            int x = (int)(q->x >> 16), y = (int)(q->y >> 16);
+            if (i && q->intensity && q->color == COL_GREEN) {
+                int dx = x - px, dy = y - py;
+                if (abs(dx) + abs(dy) > 15 && (abs(dx) > 3 || abs(dy) > 3)) {
+                    double a = dy, b = -dx, nn = a * a + b * b;
+                    if (nn > 1) {
+                        nn = 1.0 / nn;                       /* work in a^2+b^2 = 1/nn units */
+                        double c = a * px + b * py;
+                        Saa += a * a * nn; Sab += a * b * nn; Sbb += b * b * nn;
+                        Sac += a * c * nn; Sbc += b * c * nn; m++;
+                    }
+                }
+            }
+            px = x; py = y;
+        }
+        double det = Saa * Sbb - Sab * Sab;
+        if (m >= 6 && (det > 1e-3 || det < -1e-3)) {
+            int vx = (int)((Sbb * Sac - Sab * Sbc) / det);
+            int vy = (int)((Saa * Sbc - Sab * Sac) / det);
+            if (vx >= PLAY_X0 && vx <= PLAY_X1 && vy >= PLAY_Y0 && vy <= PLAY_Y1) { vp_x = vx; vp_y = vy; have_vp = 1; }
+        }
+    }
+
+    /*
      * Targets. Fireballs first - a red cluster in the play area is on its way to the shields
      * and shooting it is what the game is about - then the nearest TIE fighter. Anything
      * outside the play area is cockpit, and any small red thing is a laser bolt or a spark.
      */
     int best = -1, bestd = 0x7fffffff, bestpri = 0;
+    last_tx = tgt_x; last_ty = tgt_y; have_last_tgt = have_tgt;
     have_tgt = 0; ntargets = 0;
     int ax = have_cross ? cross_x : CX, ay = have_cross ? cross_y : CY;
     for (int pass = 0; pass < 2; pass++) {
@@ -198,6 +236,10 @@ void ap_frame(const avg_t *avg)
         if (have_tgt && pass == 0) break;            /* a fireball wins outright */
     }
     (void)best;
+    /* if this frame's target is near last frame's, it is the same one, so its velocity is real */
+    if (have_tgt && have_last_tgt && abs(tgt_x - last_tx) + abs(tgt_y - last_ty) < 45) {
+        tvx = tgt_x - last_tx; tvy = tgt_y - last_ty;
+    } else { tvx = tvy = 0; }
 }
 
 void ap_update(sw_input_t *in, uint64_t now_us, int human_active)
@@ -250,18 +292,18 @@ void ap_update(sw_input_t *in, uint64_t now_us, int human_active)
          * target is, clamped to the yoke's throw. With nothing to shoot, ease back to centre.
          */
         /*
-         * The port. The banner is up for a moment; the port itself comes up the trench a few
-         * seconds later, low and centred. So the banner starts a clock, and for a while after
-         * it the crosshair sits at the bottom centre with the trigger going - the turrets can
-         * have their turn later.
+         * Where to aim. In the trench, hold the vanishing point - that is trench survival and
+         * the exhaust-port shot at once. Otherwise chase the nearest threat, led by its own
+         * velocity times LEAD frames so the shot arrives where the target is going rather than
+         * where it was a frame or two ago, which is the lag. With nothing to do, ease to centre.
          */
-        if (port_ahead) port_seen_us = now_us;
-        int port_run = port_seen_us && now_us - port_seen_us < 5000000;
+        int aim_x = CX, aim_y = CY, shoot_here = 0;
+        if (in_trench && have_vp)        { aim_x = vp_x; aim_y = vp_y; shoot_here = 1; }
+        else if (in_trench)              { aim_x = CX;   aim_y = CY;   shoot_here = 1; }
+        else if (have_tgt)               { aim_x = tgt_x + tvx * LEAD; aim_y = tgt_y + tvy * LEAD; shoot_here = 1; }
 
-        int ex = 0, ey = 0;
-        if (port_run && have_cross)      { ex = CX - cross_x;    ey = PORT_Y - cross_y; }
-        else if (have_tgt && have_cross) { ex = tgt_x - cross_x; ey = tgt_y - cross_y; }
-        else if (have_cross)             { ex = CX - cross_x;    ey = CY - cross_y; }
+        int ex = have_cross ? aim_x - cross_x : 0;
+        int ey = have_cross ? aim_y - cross_y : 0;
         /*
          * Signs, measured from command-then-response across consecutive frames: yaw 0 moves the
          * crosshair right and yaw 255 left; pitch 255 moves it up (smaller y) and pitch 0 down.
@@ -289,8 +331,12 @@ void ap_update(sw_input_t *in, uint64_t now_us, int human_active)
         /* shoot whenever there is something to shoot at and we are roughly on it; the trigger
          * is pulsed, because the game fires on the press, not while held */
         static int trig;
-        int on_target = (have_tgt || port_run) && abs(ex) < 30 && abs(ey) < 30;
-        in->fire = on_target ? ((trig++ >> 1) & 1) : 0;
+        trig++;
+        /* fire in the trench no matter what (the port and the turrets are both straight ahead),
+         * and on a threat once the crosshair is close; the trigger is pulsed, the game fires on
+         * the press */
+        int on_target = shoot_here && (in_trench || (abs(ex) < 30 && abs(ey) < 30));
+        in->fire = on_target ? (trig & 1) : 0;
         return;
     }
     }
