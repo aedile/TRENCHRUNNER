@@ -17,7 +17,7 @@
 #include "input.h"
 #include "audio_hal.h"
 #include "sound.h"
-#include "launcher_handback.h"
+#include "medalboot.h"
 
 static const char *TAG = "TRENCH";
 
@@ -44,7 +44,11 @@ extern "C" void app_main(void)
 {
     /* Before anything else: if we were chain-booted from the menu, make sure the
      * next reset goes back to it rather than here. */
-    launcher_handback();
+    /*
+     * FIRST LINE, before anything that can fail: point the boot partition back at the MINIMAME
+     * launcher, so a panic or a brownout lands in the menu instead of boot-looping.
+     */
+    medalboot_game_startup();
 
 #if !DEBUG_LOG
     esp_log_level_set("*", ESP_LOG_NONE);
@@ -64,6 +68,9 @@ extern "C" void app_main(void)
 #endif
     input_init();
     audio_init();
+
+    /* far enough in to be sure this image works: stop the launcher counting attempts */
+    medalboot_game_running();
 
     /* Copy the ROMs the CPU and AVG fetch from into RAM: reads through the flash
      * cache are far slower than SRAM and this is the emulator's hottest path. */
