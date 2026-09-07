@@ -17,6 +17,7 @@
 #include "input.h"
 #include "audio_hal.h"
 #include "sound.h"
+#include "launcher_handback.h"
 
 static const char *TAG = "TRENCH";
 
@@ -41,6 +42,10 @@ static void on_frame(const avg_t *avg, void *user)
 
 extern "C" void app_main(void)
 {
+    /* Before anything else: if we were chain-booted from the menu, make sure the
+     * next reset goes back to it rather than here. */
+    launcher_handback();
+
 #if !DEBUG_LOG
     esp_log_level_set("*", ESP_LOG_NONE);
 #endif
