@@ -49,7 +49,10 @@ static int pending_gesture = GESTURE_NONE;
  * (accelerometer X). Steering rotates gravity within the X/Y plane, pitching the
  * nose rotates it within the X/Z plane; both are angles we can take with atan2
  * relative to a neutral pose captured when the player first presses fire. */
-static void read_angles(float *yaw_ang, float *pitch_ang)
+/* Returns false when the reading cannot be trusted: lying flat, gravity points straight out of
+ * the screen and the in-plane angle is noise, so a pose captured there is a centre the player
+ * was never holding. Nothing is captured or acted on until the medal is actually up. */
+static bool read_angles(float *yaw_ang, float *pitch_ang)
 {
     int16_t ax, ay, az;
     qmi8658_read_accel(&ax, &ay, &az);
@@ -58,6 +61,7 @@ static void read_angles(float *yaw_ang, float *pitch_ang)
     float in_plane = sqrtf((float)ax * ax + (float)ay * ay);
     *yaw_ang = atan2f((float)ay, (float)ax) * 57.2958f;
     *pitch_ang = atan2f((float)az, in_plane) * 57.2958f;
+    return in_plane > 1.2f * fabsf((float)az);      /* held up, not lying down */
 }
 
 static float wrap_deg(float d)
@@ -76,12 +80,14 @@ static uint8_t angle_to_adc(float deg, float sign)
     return (uint8_t)v;
 }
 
-static void capture_neutral(void)
+static bool capture_neutral(void)
 {
-    if (!imu_ok) return;
-    read_angles(&g0_yaw_ang, &g0_pitch_ang);
+    float yaw_ang, pitch_ang;
+    if (!imu_ok || !read_angles(&yaw_ang, &pitch_ang)) return false;   /* try again next time */
+    g0_yaw_ang = yaw_ang; g0_pitch_ang = pitch_ang;
     have_neutral = true;
     ESP_LOGI(TAG, "neutral pose captured: yaw %.1f pitch %.1f", g0_yaw_ang, g0_pitch_ang);
+    return true;
 }
 
 void input_init(void)
@@ -156,11 +162,11 @@ void input_update(sw_input_t *in)
     }
     pwr_was_down = pwr;
 
-    if (imu_ok && now - imu_last_us >= IMU_PERIOD_US) {
-        imu_last_us = now;
-        float yaw_ang, pitch_ang;
-        read_angles(&yaw_ang, &pitch_ang);
-        if (!have_neutral) {
+    float yaw_ang, pitch_ang;
+    bool imu_due = imu_ok && now - imu_last_us >= IMU_PERIOD_US;
+    if (imu_due) imu_last_us = now;
+    if (imu_due && read_angles(&yaw_ang, &pitch_ang)) {
+        if (!have_neutral && !capture_neutral()) {
             in->yaw = 0x80;
             in->pitch = 0x80;
         } else {
