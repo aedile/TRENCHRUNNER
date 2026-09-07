@@ -38,8 +38,12 @@ static int cross_x, cross_y, have_cross;
 static int tgt_x, tgt_y, have_tgt, ntargets;
 static int port_ahead;               /* the "EXHAUST PORT AHEAD" banner is up */
 static int have_vp, vp_x, vp_y;      /* the trench's vanishing point: where the exhaust port appears */
+static int have_ds, ds_x, ds_y;      /* the medium death star on the select screen */
+#define MAX_TOWERS 8
+static int ntowers, tower_x[MAX_TOWERS];   /* x of each tall yellow tower in the trench */
 static int last_cx, last_cy, have_last;   /* the crosshair a frame ago, for damping */
 static int last_tx, last_ty, have_last_tgt, tvx, tvy;   /* the target a frame ago, for leading */
+static int int_x, int_y;             /* integral of the aim error, to kill steady-state offset */
 static int in_trench;                /* the trench walls are on screen */
 
 void ap_init(const ap_config_t *c)
@@ -66,6 +70,8 @@ int ap_debug_yellow(int i, int *n, int *x0, int *y0, int *x1, int *y1)
     return 1;
 }
 int  ap_in_trench(void) { return in_trench; }
+int  ap_towers(void) { return ntowers; }
+int  ap_have_ds(void) { return have_ds; }
 void ap_target(int *x, int *y, int *have) { *x = tgt_x; *y = tgt_y; *have = have_tgt; }
 
 /*
@@ -165,10 +171,16 @@ void ap_frame(const avg_t *avg)
     for (int i = 0; i < n; i++)
         if (cl[i].n >= 28 && cl[i].n <= 60 && cl[i].y0 >= 30 && cl[i].y1 <= 70 && cl[i].x0 > 30) banner++;
     port_ahead = banner >= 2;
-    n = gather(avg, COL_GREEN, cl, MAX_CLUSTERS);
-    in_trench = 0;
-    for (int i = 0; i < n; i++)
-        if (cl[i].n >= 25 && cl[i].x1 - cl[i].x0 >= 200 && cl[i].y1 - cl[i].y0 >= 150) in_trench = 1;
+    /* the trench walls are one big cluster spanning the screen - green in the first trench,
+     * yellow once the towers begin. Either means we are in the trench. */
+    int wall_col = 0;
+    for (int col = COL_GREEN; !wall_col; ) {
+        n = gather(avg, col, cl, MAX_CLUSTERS);
+        for (int i = 0; i < n; i++)
+            if (cl[i].n >= 25 && cl[i].x1 - cl[i].x0 >= 200 && cl[i].y1 - cl[i].y0 >= 130) { wall_col = col; break; }
+        if (col == COL_GREEN) col = COL_YELLOW; else break;
+    }
+    in_trench = wall_col != 0;
 
     /*
      * The exhaust port has no mark of its own - it sits at the point the trench walls converge
@@ -184,7 +196,7 @@ void ap_frame(const avg_t *avg)
         for (int i = 0; i < avg->npoints; i++) {
             const avg_point_t *q = &avg->points[i];
             int x = (int)(q->x >> 16), y = (int)(q->y >> 16);
-            if (i && q->intensity && q->color == COL_GREEN) {
+            if (i && q->intensity && q->color == wall_col) {
                 int dx = x - px, dy = y - py;
                 if (abs(dx) + abs(dy) > 15 && (abs(dx) > 3 || abs(dy) > 3)) {
                     double a = dy, b = -dx, nn = a * a + b * b;
@@ -203,6 +215,37 @@ void ap_frame(const avg_t *avg)
             int vx = (int)((Sbb * Sac - Sab * Sbc) / det);
             int vy = (int)((Saa * Sbc - Sab * Sac) / det);
             if (vx >= PLAY_X0 && vx <= PLAY_X1 && vy >= PLAY_Y0 && vy <= PLAY_Y1) { vp_x = vx; vp_y = vy; have_vp = 1; }
+        }
+    }
+
+    /*
+     * Towers. Deep in the trench, tall yellow pillars rise from the floor and the ship has to
+     * fly through the gaps between them (or shoot them). They are the tall yellow clusters -
+     * distinct from the yellow banner text, which is wide and short. Record where each one is
+     * so the flight code can steer for the widest gap.
+     */
+    /*
+     * The death-star select screen: three green ellipses of about eighteen segments, EASY top
+     * left, HARD top right, MEDIUM at the bottom centre. Medium drops you into the towers right
+     * after the opening dogfight, which is the good part, so that is the one to shoot.
+     */
+    have_ds = 0;
+    { int nn = gather(avg, COL_GREEN, cl, MAX_CLUSTERS);
+      for (int i = 0; i < nn; i++) {
+          int w = cl[i].x1 - cl[i].x0, h = cl[i].y1 - cl[i].y0, cx = (cl[i].x0 + cl[i].x1) / 2, cy = (cl[i].y0 + cl[i].y1) / 2;
+          if (cl[i].n >= 12 && cl[i].n <= 26 && w >= 16 && w <= 34 && h >= 26 && h <= 46 && cy > 170 && cx > 90 && cx < 160) {
+              ds_x = cx; ds_y = cy; have_ds = 1;      /* the medium death star */
+          }
+      }
+    }
+
+    ntowers = 0;
+    if (in_trench) {
+        n = gather(avg, COL_YELLOW, cl, MAX_CLUSTERS);
+        for (int i = 0; i < n && ntowers < MAX_TOWERS; i++) {
+            int w = cl[i].x1 - cl[i].x0, h = cl[i].y1 - cl[i].y0;
+            int cx = (cl[i].x0 + cl[i].x1) / 2;
+            if (h >= 60 && h > w * 2 && cx >= PLAY_X0 && cx <= PLAY_X1) tower_x[ntowers++] = cx;
         }
     }
 
@@ -268,9 +311,22 @@ void ap_update(sw_input_t *in, uint64_t now_us, int human_active)
         return;
 
     case AP_STARTING:
-        /* free play: a pull of the trigger starts the game */
+        /* free play: a pull of the trigger brings up the death-star select screen */
         in->fire = (now_us - start_since) < 400000;
-        if (now_us - start_since > 1500000) { state = AP_PLAYING; game_since = now_us; lost_since = 0; }
+        if (now_us - start_since > 1500000) { state = AP_SELECT; start_since = now_us; }
+        return;
+
+    case AP_SELECT:
+        /* aim at the medium death star and fire; once it is gone the game has begun */
+        if (have_ds && have_cross) {
+            int ex = ds_x - cross_x, ey = ds_y - cross_y;
+            int yaw = 0x80 - ex * 6 / 8, pitch = 0x80 - ey * 6 / 8;
+            in->yaw = (uint8_t)(yaw < 0 ? 0 : yaw > 255 ? 255 : yaw);
+            in->pitch = (uint8_t)(pitch < 0 ? 0 : pitch > 255 ? 255 : pitch);
+            static int t; in->fire = (abs(ex) < 20 && abs(ey) < 20) ? ((t++ >> 1) & 1) : 0;
+        } else { in->fire = 0; }
+        if (!have_ds && now_us - start_since > 1500000) { state = AP_PLAYING; game_since = now_us; lost_since = 0; }
+        if (now_us - start_since > 4000000) { state = AP_PLAYING; game_since = now_us; lost_since = 0; }   /* auto-select took over */
         return;
 
     case AP_PLAYING: {
@@ -297,9 +353,26 @@ void ap_update(sw_input_t *in, uint64_t now_us, int human_active)
          * velocity times LEAD frames so the shot arrives where the target is going rather than
          * where it was a frame or two ago, which is the lag. With nothing to do, ease to centre.
          */
-        int aim_x = CX, aim_y = CY, shoot_here = 0;
-        if (in_trench && have_vp)        { aim_x = vp_x; aim_y = vp_y; shoot_here = 1; }
-        else if (in_trench)              { aim_x = CX;   aim_y = CY;   shoot_here = 1; }
+        int aim_x = CX, aim_y = CY, shoot_here = 0, fire_trench = 0;
+        if (in_trench) {
+            aim_y = have_vp ? vp_y : CY;
+            aim_x = have_vp ? vp_x : CX;
+            /*
+             * If a tower stands near the path, steer for open floor. Score sample points across
+             * the trench by how far the nearest tower is, biased toward the vanishing point so
+             * the ship does not wander when the way is clear, and aim at the best.
+             */
+            if (ntowers > 0) {
+                int best_x = aim_x, best_score = -1 << 30;
+                for (int x = PLAY_X0 + 15; x <= PLAY_X1 - 15; x += 10) {
+                    int nearest = 1 << 30;
+                    for (int t = 0; t < ntowers; t++) { int d = abs(x - tower_x[t]); if (d < nearest) nearest = d; }
+                    int score = nearest * 4 - abs(x - (have_vp ? vp_x : CX));   /* clearance, minus wander */
+                    if (score > best_score) { best_score = score; best_x = x; }
+                }
+                aim_x = best_x;
+            }
+        }
         else if (have_tgt)               { aim_x = tgt_x + tvx * LEAD; aim_y = tgt_y + tvy * LEAD; shoot_here = 1; }
 
         int ex = have_cross ? aim_x - cross_x : 0;
@@ -320,8 +393,22 @@ void ap_update(sw_input_t *in, uint64_t now_us, int human_active)
          */
         int vx = have_last ? cross_x - last_cx : 0;
         int vy = have_last ? cross_y - last_cy : 0;
-        int yaw   = 0x80 - (ex * 6 - vx * 18) / 8;
-        int pitch = 0x80 - (ey * 6 - vy * 18) / 8;
+        /*
+         * Proportional-integral-damping. The P term chases, the damping term settles, and the
+         * I term removes the steady-state offset a pure P controller always leaves - which is
+         * why the crosshair sat consistently to one side of the exhaust port. The integral is
+         * clamped so it cannot wind up, and it bleeds away when the error is small or absent.
+         */
+        if (have_cross && shoot_here) {
+            int_x += ex; int_y += ey;
+            int cap = 600;
+            if (int_x >  cap) int_x =  cap;
+            if (int_x < -cap) int_x = -cap;
+            if (int_y >  cap) int_y =  cap;
+            if (int_y < -cap) int_y = -cap;
+        } else { int_x -= int_x / 8; int_y -= int_y / 8; }
+        int yaw   = 0x80 - (ex * 6 - vx * 18 + int_x * 3 / 2) / 8;
+        int pitch = 0x80 - (ey * 6 - vy * 18 + int_y * 3 / 2) / 8;
         if (yaw < 0) yaw = 0;
         if (yaw > 255) yaw = 255;
         if (pitch < 0) pitch = 0;
@@ -332,10 +419,9 @@ void ap_update(sw_input_t *in, uint64_t now_us, int human_active)
          * is pulsed, because the game fires on the press, not while held */
         static int trig;
         trig++;
-        /* fire in the trench no matter what (the port and the turrets are both straight ahead),
-         * and on a threat once the crosshair is close; the trigger is pulsed, the game fires on
-         * the press */
-        int on_target = shoot_here && (in_trench || (abs(ex) < 30 && abs(ey) < 30));
+        int on_target;
+        if (in_trench) on_target = fire_trench;                       /* only to clear a tower or take the port */
+        else           on_target = shoot_here && abs(ex) < 30 && abs(ey) < 30;
         in->fire = on_target ? (trig & 1) : 0;
         return;
     }
