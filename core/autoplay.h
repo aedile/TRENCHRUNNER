@@ -23,7 +23,7 @@
 extern "C" {
 #endif
 
-typedef enum { AP_IDLE = 0, AP_STARTING, AP_SELECT, AP_PLAYING, AP_HUMAN } ap_state_t;
+typedef enum { AP_IDLE = 0, AP_STARTING, AP_PLAYING, AP_HUMAN } ap_state_t;
 
 typedef struct {
     uint32_t idle_us;          /* how long the attract runs untouched before the autopilot starts */
@@ -45,8 +45,6 @@ int  ap_have_cross(void);
 int  ap_port_ahead(void);
 int  ap_debug_yellow(int i, int *n, int *x0, int *y0, int *x1, int *y1);
 int  ap_in_trench(void);
-int  ap_towers(void);
-int  ap_have_ds(void);
 void ap_target(int *x, int *y, int *have);
 
 #ifdef __cplusplus

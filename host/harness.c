@@ -140,9 +140,9 @@ static void on_frame(const avg_t *avg, void *user)
     if (now_s >= next_save) {
         save_ppm(frames_saved++);
         { int cx, cy, tx, ty, ht; ap_crosshair(&cx, &cy); ap_target(&tx, &ty, &ht);
-          printf("t=%.2fs frame %d: %d pts  ap state %d cross %d (%d,%d) tgt %d (%d,%d) targets %d port %d trench %d towers %d ds %d yaw %u pitch %u fire %u\n",
+          printf("t=%.2fs frame %d: %d pts  ap state %d cross %d (%d,%d) tgt %d (%d,%d) targets %d port %d trench %d yaw %u pitch %u fire %u\n",
                  now_s, frames_saved - 1, avg->npoints, (int)ap_state(), ap_have_cross(), cx, cy, ht, tx, ty,
-                 ap_targets(), ap_port_ahead(), ap_in_trench(), ap_towers(), ap_have_ds(), sw_input()->yaw, sw_input()->pitch, sw_input()->fire);
+                 ap_targets(), ap_port_ahead(), ap_in_trench(), sw_input()->yaw, sw_input()->pitch, sw_input()->fire);
           for (int k = 0, n, x0, y0, x1, y1; ap_debug_yellow(k, &n, &x0, &y0, &x1, &y1); k++)
               if (n >= 6) printf("      yellow %d segs x %d-%d y %d-%d\n", n, x0, x1, y0, y1); }
         next_save += save_every;
